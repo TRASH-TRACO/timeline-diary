@@ -1,6 +1,6 @@
 {
   "rewrites": [
-    { "source": "/__/auth/:path*", "destination": "https://study-3f275.firebaseapp.com/__/auth/:path*" },
-    { "source": "/__/firebase/:path*", "destination": "https://study-3f275.firebaseapp.com/__/firebase/:path*" }
+    { "source": "/__/auth/:path*", "destination": "https://timeline-diary-99be8.firebaseapp.com/__/auth/:path*" },
+    { "source": "/__/firebase/:path*", "destination": "https://timeline-diary-99be8.firebaseapp.com/__/firebase/:path*" }
   ]
 }

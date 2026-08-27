@@ -28,7 +28,9 @@
 
 ## 2. Firebase 설정 (구글 로그인용)
 
-기본값은 기존 `study-3f275` 프로젝트를 그대로 씁니다. 두 가지만 해주세요.
+이 앱 전용 Firebase 프로젝트 **`timeline-diary-99be8`** 를 씁니다.
+설정값은 [`src/firebase-config.js`](./src/firebase-config.js)에 들어 있으니
+두 가지만 해주세요.
 
 ### 2-1. 승인된 도메인 추가
 
@@ -44,12 +46,9 @@ Firebase 콘솔 → **Authentication → 설정 → 승인된 도메인 → 도�
 Firebase 콘솔 → **Firestore Database → 규칙** 탭에 이 저장소의
 [`firestore.rules`](./firestore.rules) 내용을 붙여넣고 **게시**를 누릅니다.
 
-> ⚠️ 규칙 탭은 덮어쓰기입니다. `firestore.rules`에는 학습 일지(`users/{uid}`)와
-> 일기장(`users/{uid}/diary/*`) 규칙이 **둘 다** 들어 있으니 파일 전체를 그대로
-> 붙여넣으세요. 일기장 부분만 붙이면 학습 일지가 동작을 멈춥니다.
->
-> 하위 컬렉션은 상위 문서의 규칙을 물려받지 않기 때문에, `users/{uid}` 규칙이
-> 이미 있어도 `diary` 규칙을 따로 써주어야 합니다.
+로그인한 사람이 **자기 UID 아래 문서만** 읽고 쓸 수 있게 하는 규칙 하나가 전부입니다.
+하위 컬렉션은 상위 문서의 규칙을 물려받지 않으므로 `users/{uid}/diary/{monthKey}`
+경로를 직접 적어주어야 합니다.
 
 이 두 가지가 끝나면 구글 로그인과 기기 간 동기화가 동작합니다.
 
@@ -57,7 +56,7 @@ Firebase 콘솔 → **Firestore Database → 규칙** 탭에 이 저장소의
 
 ## 3. 선택 — 다른 Firebase 프로젝트로 옮기기
 
-학습 일지와 데이터베이스를 나누고 싶으면, Vercel 프로젝트의
+프로젝트를 갈아타고 싶으면 Vercel 프로젝트의
 **Settings → Environment Variables**에 아래를 넣고 재배포하세요.
 코드를 고칠 필요는 없습니다.
 
@@ -71,7 +70,7 @@ Firebase 콘솔 → **Firestore Database → 규칙** 탭에 이 저장소의
 | `VITE_FB_APP_ID` | `1:1234567890:web:abcdef` |
 
 값은 Firebase 콘솔 → 프로젝트 설정 → **내 앱 → 웹 앱**의 SDK 설정에 있습니다.
-새 프로젝트라면 `firestore.rules`의 `users/{uid}` 블록은 지워도 됩니다.
+[`vercel.json`](./vercel.json)의 리라이트 주소도 같이 바꿔주세요(4번 참고).
 
 > Firebase 웹 설정값은 비밀이 아닙니다. 브라우저에 그대로 실려 나가는 값이고,
 > 실제 접근 통제는 보안 규칙과 승인된 도메인이 합니다. 그래서 기본값을
@@ -79,13 +78,13 @@ Firebase 콘솔 → **Firestore Database → 규칙** 탭에 이 저장소의
 
 ## 4. 선택 — 로그인 팝업에 내 도메인 보이게 하기
 
-기본 설정에서는 구글 로그인 팝업 주소창에 `study-3f275.firebaseapp.com`이
+기본 설정에서는 구글 로그인 팝업 주소창에 `timeline-diary-99be8.firebaseapp.com`이
 잠깐 보입니다. 내 도메인으로 바꾸고 싶다면:
 
 1. `VITE_FB_AUTH_DOMAIN`을 내 도메인으로 설정 (예: `timeline-diary.vercel.app`)
-2. [`vercel.json`](./vercel.json)의 `/__/auth` 리라이트가 그 도메인의 Firebase
-   인증 핸들러를 대신 받아줍니다. 이미 들어 있으니 그대로 두면 됩니다.
-   (다른 Firebase 프로젝트로 옮겼다면 `destination`의 프로젝트 주소도 바꿔주세요)
+2. [`vercel.json`](./vercel.json)의 `/__/auth` 리라이트가 그 요청을 실제 Firebase
+   인증 핸들러로 넘겨줍니다. 이미 `timeline-diary-99be8`를 가리키게 들어 있으니
+   그대로 두면 됩니다. (3번으로 프로젝트를 옮겼다면 `destination`도 바꿔주세요)
 
 이 리라이트는 기본 설정에서는 쓰이지 않으니, 신경 안 쓰셔도 아무 문제 없습니다.
 
