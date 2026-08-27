@@ -69,6 +69,10 @@ function setLogoutBtn(show){
   const b = document.getElementById('sync-logout');
   if(b) b.style.display = show ? '' : 'none';
 }
+// 로그인 상태가 바뀌면 화면(로컬 전용 안내 등)도 같이 맞춘다
+function notifyAuth(){
+  if(typeof window.onAuthChange === 'function') window.onAuthChange();
+}
 
 // 콘솔 설정이 빠졌을 때 원인이 화면에 안 드러나므로 한 번만 안내한다
 let warned = false;
@@ -118,10 +122,14 @@ async function pushMonth(key){
     setChip(DiaryStore.dirtyKeys().length ? '저장 중' : '동기화됨',
             DiaryStore.dirtyKeys().length ? 'busy' : 'ok');
   }catch(e){
-    // 오프라인이면 Firestore가 큐에 쌓아뒀다가 복구 시 보낸다
     console.warn('[sync] 업로드 실패:', e.code || e.message);
     setChip('오프라인', 'err');
     warnSetup(e);
+    // 오프라인이면 Firestore가 큐에 쌓아뒀다가 복구되면 알아서 보낸다 — 그건 알릴 일이 아니다.
+    // 그 외(권한·용량·형식)는 사용자가 모르면 영영 안 올라가므로 화면에 띄운다.
+    if(!['unavailable', 'deadline-exceeded', 'cancelled'].includes(e.code)){
+      showToast('동기화 실패 — ' + (e.code || e.message));
+    }
   }
 }
 
@@ -262,12 +270,14 @@ onAuthStateChanged(auth, async user => {
     setUser('');
     setLogoutBtn(false);
     cancelLoginProgress();
+    notifyAuth();
     return;
   }
   uid = user.uid;
   setUser(user.displayName || user.email || '', user.email || '');
   setLogoutBtn(true);
   cancelLoginProgress();
+  notifyAuth();
   try{ await reconcile(); }
   catch(e){
     console.warn('[sync] 조정 실패:', e.message);

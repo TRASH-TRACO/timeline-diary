@@ -40,6 +40,20 @@ function chooseEntry(mode){
 }
 window.chooseEntry = chooseEntry;
 
+/**
+ * 로컬 전용 안내 — 로그인하지 않았는데 기록이 쌓여 있을 때만 띄운다.
+ * (기록이 하나도 없을 땐 알릴 게 없으니 조용히 둔다)
+ */
+function refreshLocalNote(){
+  const el = $('local-note');
+  if(!el) return;
+  const signedIn = !!(window.DiarySync && window.DiarySync.isSignedIn && window.DiarySync.isSignedIn());
+  const s = DiaryStore.stats();
+  el.hidden = signedIn || (s.routes === 0 && s.notes === 0);
+}
+// 로그인 상태가 바뀌면 동기화 모듈이 불러준다
+window.onAuthChange = () => { refreshLocalNote(); };
+
 // ── 캘린더 ──────────────────────────────────
 function shiftMonth(delta){
   calMonth += delta;
@@ -133,6 +147,7 @@ function renderMonthSummary(){
   el.innerHTML = routes || notes
     ? `<span>경로 <b>${routes}</b>일</span><span>일기 <b>${notes}</b>편</span><span>이동 <b>${fmtDist(dist)}</b></span>`
     : '<span class="dim">이 달은 아직 비어 있어요</span>';
+  refreshLocalNote();
 }
 
 // ── 하루 패널 ───────────────────────────────
@@ -326,9 +341,16 @@ async function handleFiles(files){
   calYear = +last.slice(0, 4); calMonth = +last.slice(5, 7) - 1;
   renderCalendar(); renderPanel(); saveView();
 
+  // 어디에 저장됐는지를 결과에 같이 적는다 — 로그인 안 한 걸 모르고 넘어가면
+  // "다른 기기에서 안 보인다"로 한참 뒤에야 알게 된다.
+  const signedIn = !!(window.DiarySync && window.DiarySync.isSignedIn && window.DiarySync.isSignedIn());
+  const where = signedIn
+    ? '<br>☁️ 계정에 동기화됩니다.'
+    : '<br>📱 <b>이 기기에만 저장됐어요.</b> 다른 기기에서도 보려면 로그인하세요 — ' +
+      '지금까지 쌓인 기록도 그대로 계정으로 옮겨갑니다.';
   setImportStatus(
     `✅ <b>${fmtNum(dsList.length)}일</b>의 경로를 가져왔어요.<br>` +
-    `${dsList[0]} ~ ${last} · 총 이동 ${fmtDist(totalM)}` +
+    `${dsList[0]} ~ ${last} · 총 이동 ${fmtDist(totalM)}` + where +
     (skipped.length ? `<br><span class="dim">건너뜀: ${escapeHtml(skipped.slice(0, 3).join(', '))}${skipped.length > 3 ? ' 외 ' + (skipped.length - 3) + '개' : ''}</span>` : ''),
     'ok');
   showToast(`✅ ${fmtNum(dsList.length)}일 경로를 가져왔어요`);
@@ -415,6 +437,7 @@ async function init(){
   renderPanel();
   wireImport();
   applyEntryGate();
+  refreshLocalNote();
 
   // 동기화로 데이터가 들어오면 화면을 맞춘다 (입력 중인 일기는 건드리지 않는다)
   DiaryStore.onChange(what => {

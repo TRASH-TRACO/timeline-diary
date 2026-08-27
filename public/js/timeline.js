@@ -294,26 +294,37 @@ function buildRoute(dayPts){
 }
 
 // ── 저장용 인코딩 ───────────────────────────
-// Firestore는 배열 안의 배열을 못 담는다. 그래서 좌표·시각을 정수 델타로 편 뒤
-// 평평한 숫자 배열 하나에 담는다(용량도 같이 줄어든다).
-//   p = [Δlat(1e-5), Δlng(1e-5), Δt(초), ...]
+// 좌표·시각을 정수 델타로 편 뒤 쉼표로 이은 문자열 하나에 담는다.
+//   p = "Δlat(1e-5),Δlng(1e-5),Δt(초), ..."
+//
+// 왜 배열이 아니라 문자열인가:
+//  · Firestore는 배열 원소마다 색인 항목을 만들고, 문서당 색인 항목은 4만 개가 상한이다.
+//    하루 300점이면 900개 — 한 달치를 한 문서에 담는 이 구조에선 상한에 바짝 붙는다.
+//    문자열이면 색인 항목이 1개다.
+//  · Firestore는 배열 안의 배열을 아예 못 담는다.
+//  · 덤으로 용량도 준다(대괄호·공백이 사라진다).
 function encodeRoute(r, off){
-  const p = [];
+  const out = [];
   let la = 0, ln = 0, t = 0;
   for(const pt of r.points){
-    const a = Math.round(pt[0] * 1e5), o = Math.round(pt[1] * 1e5), s = Math.round(pt[2] / 1000);
-    p.push(a - la, o - ln, s - t);
-    la = a; ln = o; t = s;
+    const a = Math.round(pt[0] * 1e5), o = Math.round(pt[1] * 1e5), sec = Math.round(pt[2] / 1000);
+    out.push(a - la, o - ln, sec - t);
+    la = a; ln = o; t = sec;
   }
-  return { v: 1, p, d: Math.round(r.dist), s: r.s, e: r.e, tz: off == null ? null : off };
+  return { v: 2, p: out.join(','), d: Math.round(r.dist), s: r.s, e: r.e, tz: off == null ? null : off };
 }
-/** 인코딩된 경로 → {points:[[lat,lng,ms]], dist, s, e, tz} */
+/**
+ * 인코딩된 경로 → {points:[[lat,lng,ms]], dist, s, e, tz}
+ * v1(숫자 배열)과 v2(문자열) 둘 다 읽는다 — 예전에 저장된 것도 그대로 열린다.
+ */
 function decodeRoute(enc){
-  if(!enc || !Array.isArray(enc.p)) return null;
+  if(!enc) return null;
+  const raw = typeof enc.p === 'string' ? (enc.p ? enc.p.split(',') : []) : enc.p;
+  if(!Array.isArray(raw)) return null;
   const points = [];
   let la = 0, ln = 0, t = 0;
-  for(let i = 0; i + 2 < enc.p.length; i += 3){
-    la += enc.p[i]; ln += enc.p[i + 1]; t += enc.p[i + 2];
+  for(let i = 0; i + 2 < raw.length; i += 3){
+    la += +raw[i]; ln += +raw[i + 1]; t += +raw[i + 2];
     points.push([la / 1e5, ln / 1e5, t * 1000]);
   }
   if(!points.length) return null;

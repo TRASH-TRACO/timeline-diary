@@ -72,6 +72,16 @@ setTimeout(function(){document.documentElement.classList.remove('booting');},200
     <button class="btn pri" onclick="openImport()">＋ 타임라인 가져오기</button>
   </div>
 
+  <!-- 로그인 안 한 채로 기록이 쌓였을 때 — 이 기기에만 있다는 걸 분명히 알린다 -->
+  <div class="local-note" id="local-note" hidden>
+    <span class="local-note-ico" aria-hidden="true">📱</span>
+    <div class="local-note-t">
+      <b>이 기기에만 저장되고 있어요.</b>
+      다른 브라우저·기기에서는 보이지 않고, 방문 기록을 지우면 같이 사라집니다.
+    </div>
+    <button class="btn pri local-note-btn" onclick="onSyncChipClick()">Google로 로그인</button>
+  </div>
+
   <div class="cal-sum" id="cal-sum"></div>
 
   <!-- 캘린더 + 하루 패널 -->
