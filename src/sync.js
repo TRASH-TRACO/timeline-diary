@@ -128,7 +128,10 @@ async function pushMonth(key){
     // 오프라인이면 Firestore가 큐에 쌓아뒀다가 복구되면 알아서 보낸다 — 그건 알릴 일이 아니다.
     // 그 외(권한·용량·형식)는 사용자가 모르면 영영 안 올라가므로 화면에 띄운다.
     if(!['unavailable', 'deadline-exceeded', 'cancelled'].includes(e.code)){
-      showToast('동기화 실패 — ' + (e.code || e.message));
+      const msg = e.code === 'invalid-argument'
+        ? `${key}은 서버가 받아주지 않았어요 — 새로고침하면 다시 시도합니다`
+        : '동기화 실패 — ' + (e.code || e.message);
+      showToast(msg);
     }
   }
 }

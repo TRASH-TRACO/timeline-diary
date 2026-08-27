@@ -24,6 +24,42 @@ function getDay(ds){
   return (m && m.days[ds]) || null;
 }
 
+// ── 예전 형식 이관 ──────────────────────────
+/**
+ * 경로 v1(점 배열) → v2(쉼표로 이은 문자열).
+ *
+ * Firestore는 배열 원소마다 색인 항목을 만들고(오름차순·내림차순 각 1개),
+ * 문서당 색인 항목은 4만 개가 상한이다. 하루 300점이면 원소가 900개라
+ * 한 달에 22일 넘게 돌아다닌 달은 상한을 넘겨 업로드가 통째로 거부됐다.
+ * 문자열로 담으면 색인 항목이 1개다.
+ *
+ * @returns {boolean} 바뀌었으면 true
+ */
+function routeToV2(route){
+  if(!route || !Array.isArray(route.p)) return false;
+  route.p = route.p.join(',');
+  route.v = 2;
+  return true;
+}
+
+/** 이 기기에 남아 있는 v1 경로를 전부 v2로 옮기고, 다시 올리도록 표시한다. */
+async function migrateRoutes(){
+  let n = 0;
+  for(const key of monthKeys()){
+    const m = _months.get(key);
+    let hit = false;
+    for(const ds in m.days){
+      if(routeToV2(m.days[ds].route)){ hit = true; n++; }
+    }
+    if(hit){ _dirty.add(key); await saveMonth(key); }
+  }
+  if(n){
+    await saveDirty();
+    console.info('[store] 경로 ' + n + '일치를 새 저장 형식으로 옮겼습니다 — 다시 업로드합니다');
+  }
+  return n;
+}
+
 // ── 로컬 저장 ───────────────────────────────
 async function loadLocal(){
   const idx = (await idbGet(MONTH_IDX)) || [];
@@ -33,6 +69,7 @@ async function loadLocal(){
   }
   const d = (await idbGet('dirty')) || [];
   d.forEach(k => _dirty.add(k));
+  await migrateRoutes();
 }
 async function saveMonth(key){
   const m = _months.get(key);
@@ -150,7 +187,8 @@ function mergeMonth(key, remote){
       changed = true;
     }
     if((r.routeAt || 0) > (l.routeAt || 0)){
-      if(r.route) l.route = r.route; else delete l.route;
+      if(r.route){ l.route = r.route; routeToV2(l.route); }   // 예전 형식이면 받는 즉시 옮긴다
+      else delete l.route;
       l.routeAt = r.routeAt || 0;
       changed = true;
     }
@@ -195,7 +233,7 @@ function stats(){
 }
 
 window.DiaryStore = {
-  NOTE_MAX, loadLocal, onChange, emit,
+  NOTE_MAX, loadLocal, onChange, emit, migrateRoutes,
   getMonth, getDay, monthKeys,
   setNote, setRoutes, deleteRoute, clearRoutes,
   snapshot, applyRemote, dirtyKeys, markClean, markDirty, stats
