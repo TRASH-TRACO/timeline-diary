@@ -151,6 +151,55 @@ code{font-family:var(--font-mono);font-size:.92em;background:var(--bg3);padding:
 .pn-empty-t{font-size:14px;font-weight:600;margin-bottom:4px;}
 .pn-empty-d{font-size:12px;color:var(--text3);margin-bottom:14px;line-height:1.6;}
 
+/* ── 하루 보기 전환 탭 ── */
+.pn-tabs{display:flex;gap:2px;margin-bottom:12px;border-bottom:1px solid var(--border);}
+.pn-tab{padding:7px 14px;font-size:12.5px;font-weight:500;color:var(--text3);background:none;
+  border:none;border-bottom:2px solid transparent;margin-bottom:-1px;cursor:pointer;transition:all .15s;}
+.pn-tab:hover{color:var(--text);}
+.pn-tab.on{color:var(--text);border-bottom-color:var(--text);font-weight:600;}
+.pn-loading{padding:40px 0;text-align:center;font-size:12px;color:var(--text3);}
+
+/* ── 지도 재생기 ── */
+.mp-map{height:420px;border:1px solid var(--border);border-radius:var(--r);overflow:hidden;
+  background:var(--bg2);z-index:0;}
+@media(max-width:600px){ .mp-map{height:320px;} }
+/* OSM 기본 타일은 밝은 지도뿐이라, 어두운 화면에서는 반전시켜 쓴다 */
+:root[data-theme="dark"] .mp-map .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.92) contrast(.9);}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]) .mp-map .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.92) contrast(.9);}
+}
+/* Leaflet은 leaflet-container 클래스를 지도 요소 자기 자신에 붙인다 —
+   자손 셀렉터(.mp-map .leaflet-container)로 쓰면 아무것도 안 잡히고
+   Leaflet 기본 배경(#ddd)이 그대로 남는다. 반드시 붙여 쓸 것. */
+.mp-map.leaflet-container{background:var(--bg2);font-family:var(--font-sans);}
+.mp-map .leaflet-control-attribution{font-size:10px;background:rgba(255,255,255,.85);color:#334155;}
+.mp-map .leaflet-control-attribution a{color:#0f766e;}
+.mp-map .leaflet-popup-content{font-size:12px;line-height:1.6;}
+
+/* 시작·끝 표식 — 색이 아니라 글자로 구분한다 */
+.mp-pin{background:none;border:none;}
+.mp-pin span{display:inline-block;transform:translate(-50%,-140%);white-space:nowrap;
+  font-size:11px;font-weight:600;color:#0f172a;background:rgba(255,255,255,.92);
+  border:1px solid #cbd5e1;border-radius:100px;padding:2px 8px;box-shadow:0 1px 3px rgba(15,23,42,.2);}
+
+.mp-ctl{display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap;}
+.mp-btn{flex:none;padding:6px 12px;font-size:12px;font-weight:500;border-radius:var(--r2);
+  border:1px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer;
+  transition:all .12s;white-space:nowrap;}
+.mp-btn:hover{background:var(--bg3);}
+.mp-play{min-width:92px;background:var(--accent-solid);border-color:var(--accent-solid);color:#fff;}
+.mp-play:hover{filter:brightness(1.08);background:var(--accent-solid);}
+.mp-follow.on{background:var(--accent-bg);border-color:var(--accent);color:var(--accent);}
+.mp-speed{min-width:44px;font-family:var(--font-mono);}
+.mp-scrub{flex:1;min-width:120px;accent-color:var(--accent);height:20px;}
+.mp-time{font-size:12px;font-family:var(--font-mono);color:var(--text2);min-width:42px;text-align:right;}
+.mp-read{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;font-size:11px;color:var(--text3);}
+.mp-read b{color:var(--text);font-weight:600;font-family:var(--font-mono);}
+@media(max-width:600px){
+  .mp-ctl{gap:6px;}
+  .mp-scrub{order:5;flex-basis:100%;}
+}
+
 /* ── 경로 비주얼라이저 ── */
 .rv-map{position:relative;}
 .rv-svg{display:block;width:100%;height:auto;border:1px solid var(--border);border-radius:var(--r);

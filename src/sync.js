@@ -7,27 +7,40 @@
 // 여기서는 충돌을 물어볼 일이 없다. A기기에서 쓴 일기와 B기기에서 올린 경로가
 // 서로를 덮어쓰지 않는다.
 
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect,
-         getRedirectResult, signOut, onAuthStateChanged }
-  from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js';
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
-         collection, doc, getDocs, setDoc, onSnapshot, serverTimestamp }
-  from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js';
-
 import { firebaseConfig } from './firebase-config.js';
 
+// Firebase SDK는 정적 import가 아니라 동적으로 불러온다.
+// 정적으로 두면 gstatic이 느리거나 막혔을 때 이 모듈이 통째로 실행되지 않고,
+// 번들러가 다른 모듈(지도 등)과 한 덩어리로 묶기라도 하면 그쪽까지 같이 죽는다.
+// 못 불러와도 앱은 '로그인 없이 사용' 상태로 계속 돌아가야 한다.
+const SDK = 'https://www.gstatic.com/firebasejs/12.16.0/';
+let GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult,
+    signOutFn, onAuthStateChanged, collection, doc, getDocs, setDoc, onSnapshot, serverTimestamp;
+let auth = null, db = null;
+let sdkReady = false;
 
-const app  = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-let db;
-try{
-  db = initializeFirestore(app, {
-    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
-  });
-}catch(e){
-  console.warn('[sync] 오프라인 캐시 비활성:', e.message);
-  db = initializeFirestore(app, {});
+async function loadSDK(){
+  const [appMod, authMod, fsMod] = await Promise.all([
+    import(/* @vite-ignore */ SDK + 'firebase-app.js'),
+    import(/* @vite-ignore */ SDK + 'firebase-auth.js'),
+    import(/* @vite-ignore */ SDK + 'firebase-firestore.js'),
+  ]);
+  ({ GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult,
+     onAuthStateChanged } = authMod);
+  signOutFn = authMod.signOut;
+  ({ collection, doc, getDocs, setDoc, onSnapshot, serverTimestamp } = fsMod);
+
+  const app = appMod.initializeApp(firebaseConfig);
+  auth = authMod.getAuth(app);
+  try{
+    db = fsMod.initializeFirestore(app, {
+      localCache: fsMod.persistentLocalCache({ tabManager: fsMod.persistentMultipleTabManager() })
+    });
+  }catch(e){
+    console.warn('[sync] 오프라인 캐시 비활성:', e.message);
+    db = fsMod.initializeFirestore(app, {});
+  }
+  sdkReady = true;
 }
 
 const PUSH_DEBOUNCE_MS = 1500;
@@ -242,6 +255,10 @@ async function login(){
 }
 
 window.onSyncChipClick = function(){
+  if(!sdkReady){
+    showToast('로그인 기능을 불러오지 못했어요 — 잠시 후 다시 시도해 주세요');
+    return;
+  }
   if(!uid){ login(); return; }
   pushAllDirty().then(() => showToast('☁️ 최신 상태로 맞췄어요')).catch(() => {});
 };
@@ -252,14 +269,25 @@ window.DiarySync = {
     clearTimeout(timers.get(key));
     timers.set(key, setTimeout(() => pushMonth(key), PUSH_DEBOUNCE_MS));
   },
-  signOut(){ return signOut(auth); },
+  signOut(){ return sdkReady ? signOutFn(auth) : Promise.resolve(); },
   syncNow(){ return uid ? pushAllDirty() : Promise.resolve(); },
-  isSignedIn(){ return !!uid; }
+  isSignedIn(){ return !!uid; },
+  isAvailable(){ return sdkReady; }
 };
 
-getRedirectResult(auth).catch(() => {});
+// ── 부팅 ────────────────────────────────────
+loadSDK().then(() => {
+  getRedirectResult(auth).catch(() => {});
+  onAuthStateChanged(auth, onAuth);
+}).catch(e => {
+  // SDK를 못 불러왔다 — 로그인·동기화만 빠지고 나머지는 그대로 쓸 수 있다
+  console.warn('[sync] Firebase SDK 로드 실패:', e.message);
+  setChip('로그인 불가', 'err');
+  cancelLoginProgress();
+  notifyAuth();
+});
 
-onAuthStateChanged(auth, async user => {
+async function onAuth(user){
   await window.__diaryReady.catch(() => {});   // 로컬 로드가 끝난 뒤에 조정한다
 
   if(unsub){ unsub(); unsub = null; }
@@ -286,4 +314,4 @@ onAuthStateChanged(auth, async user => {
     console.warn('[sync] 조정 실패:', e.message);
     setChip('동기화 오류', 'err');
   }
-});
+}

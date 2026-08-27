@@ -152,6 +152,51 @@ function renderMonthSummary(){
 
 // ── 하루 패널 ───────────────────────────────
 let _noteTimer = null;
+let _player = null;                       // 열려 있는 지도 재생기 (Leaflet은 직접 치워줘야 한다)
+let dayView = 'svg';                      // 'svg' | 'map'
+try{ const v = localStorage.getItem('diary_dayview'); if(v === 'map' || v === 'svg') dayView = v; }catch(_){}
+
+/** 지도 모듈은 module script라 classic script보다 늦게 뜬다. 늦게 떠도 화면을 맞춘다. */
+window.onMapReady = () => { if(dayView === 'map') renderRouteArea(); };
+
+function setDayView(v){
+  if(dayView === v) return;
+  dayView = v;
+  try{ localStorage.setItem('diary_dayview', v); }catch(_){}
+  document.querySelectorAll('.pn-tab').forEach(b => b.classList.toggle('on', b.dataset.view === v));
+  renderRouteArea();
+}
+window.setDayView = setDayView;
+
+/** 경로 영역만 다시 그린다 (일기 입력칸은 건드리지 않는다 — 포커스가 날아간다) */
+function renderRouteArea(){
+  const box = $('pn-route');
+  if(!box) return;
+  if(_player){ _player.destroy(); _player = null; }
+  const rec = DiaryStore.getDay(selDate) || {};
+  if(!rec.route){
+    box.innerHTML =
+      `<div class="pn-empty">` +
+        `<div class="pn-empty-ico">🗺️</div>` +
+        `<div class="pn-empty-t">이 날의 경로가 아직 없어요</div>` +
+        `<p class="pn-empty-d">구글 타임라인 데이터를 올리면 그날 다닌 길이 여기 그려집니다.</p>` +
+        `<button class="btn pri" onclick="openImport()">타임라인 가져오기</button>` +
+      `</div>`;
+    return;
+  }
+  if(dayView === 'map'){
+    if(window.DiaryMap){
+      box.innerHTML = '';
+      _player = window.DiaryMap.open(box, rec.route, selDate);
+    }else{
+      box.innerHTML = '<div class="pn-loading">지도를 불러오는 중…</div>';
+    }
+    return;
+  }
+  box.innerHTML = '';
+  DiaryViz.renderRoute(box, rec.route, selDate);
+  renderVisitList(box, rec.route);
+}
 
 function renderPanel(){
   const panel = $('panel');
@@ -164,6 +209,12 @@ function renderPanel(){
   if(rec.route) html += `<button class="pn-del" onclick="removeRoute()" title="이 날 경로 지우기">경로 삭제</button>`;
   html += `</div>`;
 
+  if(rec.route){
+    html += `<div class="pn-tabs" role="tablist">` +
+      `<button class="pn-tab${dayView === 'svg' ? ' on' : ''}" data-view="svg" onclick="setDayView('svg')">한눈에 보기</button>` +
+      `<button class="pn-tab${dayView === 'map' ? ' on' : ''}" data-view="map" onclick="setDayView('map')">지도에서 재생</button>` +
+    `</div>`;
+  }
   html += `<div class="pn-route" id="pn-route"></div>`;
 
   html += `<div class="pn-note">` +
@@ -175,20 +226,7 @@ function renderPanel(){
 
   panel.innerHTML = html;
 
-  // 경로
-  const routeEl = $('pn-route');
-  if(rec.route){
-    DiaryViz.renderRoute(routeEl, rec.route, selDate);
-    renderVisitList(routeEl, rec.route);
-  }else{
-    routeEl.innerHTML =
-      `<div class="pn-empty">` +
-        `<div class="pn-empty-ico">🗺️</div>` +
-        `<div class="pn-empty-t">이 날의 경로가 아직 없어요</div>` +
-        `<p class="pn-empty-d">구글 타임라인 데이터를 올리면 그날 다닌 길이 여기 그려집니다.</p>` +
-        `<button class="btn pri" onclick="openImport()">타임라인 가져오기</button>` +
-      `</div>`;
-  }
+  renderRouteArea();
 
   // 일기
   const ta = $('note-input');
@@ -423,7 +461,12 @@ window.closeHelp = closeHelp;
 
 // ── 부팅 ────────────────────────────────────
 // 테마가 바뀌면 경로 색(램프)을 다시 골라야 하므로 다시 그린다
-window.onThemeChange = () => { renderCalendar(); renderPanel(); };
+window.onThemeChange = () => {
+  renderCalendar();
+  // 지도 타일은 CSS 필터로 어두워지므로 다시 열 필요가 없다. SVG만 색을 다시 고른다.
+  if(dayView === 'map') return;
+  renderPanel();
+};
 
 async function init(){
   applyThemeIcon();
