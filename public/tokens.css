@@ -1,0 +1,32 @@
+/* ──────────────────────────────────────────────
+   디자인 토큰 (단일 소스)
+   totraco 본 사이트와 동일한 Tailwind 표준 팔레트를 쓴다.
+   나중에 Next로 통합할 때 이 값들을 Tailwind theme으로 그대로 이관하면
+   재작업이 최소화된다. 시맨틱 변수(--bg, --text 등)는 style.css가
+   이 원시 토큰을 참조해 정의하고, 다크모드는 시맨틱만 재매핑한다.
+   ────────────────────────────────────────────── */
+:root{
+  /* slate scale (Tailwind 표준) */
+  --slate-50:#f8fafc;  --slate-100:#f1f5f9; --slate-200:#e2e8f0;
+  --slate-300:#cbd5e1; --slate-400:#94a3b8; --slate-500:#64748b;
+  --slate-600:#475569; --slate-700:#334155; --slate-800:#1e293b;
+  --slate-900:#0f172a; --slate-950:#020617;
+
+  /* emerald (포인트) */
+  --emerald-50:#ecfdf5;  --emerald-400:#34d399; --emerald-500:#10b981;
+  --emerald-600:#059669; --emerald-700:#047857; --emerald-950:#022c22;
+
+  /* 상태색 */
+  --red-500:#ef4444; --red-400:#f87171;
+  --amber-500:#f59e0b;
+
+  /* 폰트 스택 (시스템 폰트 — totraco와 동일 계열) */
+  --font-sans:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",Pretendard,
+    "Noto Sans KR","Malgun Gothic",system-ui,sans-serif;
+  --font-mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+
+  /* 반경 (totraco: rounded-lg/xl) */
+  --radius:10px;
+  --radius-sm:8px;
+  --radius-lg:14px;
+}

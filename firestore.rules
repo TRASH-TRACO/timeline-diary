@@ -1,0 +1,25 @@
+// Firebase 콘솔 → Firestore Database → 규칙 탭에 붙여넣고 "게시"
+//
+// ⚠️ 규칙 탭은 "덮어쓰기"입니다. 이 프로젝트를 다른 앱과 같이 쓰고 있다면
+//    그 앱의 규칙까지 이 파일에 들어 있어야 합니다. 아래 두 블록이 그것입니다.
+//
+//  · users/{uid}            — 학습 일지(totraco-study)가 쓰는 문서
+//  · users/{uid}/diary/*    — 이 일기장이 쓰는 월별 문서
+//
+// 이 일기장만 쓰는 새 Firebase 프로젝트라면 users/{uid} 블록은 지워도 됩니다.
+// (하위 컬렉션은 상위 문서 규칙을 물려받지 않으므로 diary 블록은 반드시 필요합니다)
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+
+      // 일기장 — 한 달에 문서 하나(YYYY-MM)에 그 달의 일기와 경로가 들어간다
+      match /diary/{monthKey} {
+        allow read, write: if request.auth != null && request.auth.uid == uid;
+      }
+    }
+  }
+}
