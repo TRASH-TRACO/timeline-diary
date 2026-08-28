@@ -135,12 +135,12 @@ function open(el, enc, ds){
 
   // 아직 안 지나간 길은 옅게 깔아 두고, 지나간 만큼 진하게 덧그린다
   L.polyline(latlngs, { color: '#94a3b8', weight: 3, opacity: 0.45, lineJoin: 'round' }).addTo(map);
-  const trail = L.polyline([latlngs[0]], { color: '#10b981', weight: 5, opacity: 0.95, lineJoin: 'round' }).addTo(map);
+  const trail = L.polyline([latlngs[0]], { className: 'mp-trail', color: '#10b981', weight: 5, opacity: 0.95, lineJoin: 'round' }).addTo(map);
 
   // 머문 곳
   (r.visits || []).forEach(v => {
     const ll = [v.a / 1e5, v.o / 1e5];
-    L.circleMarker(ll, { radius: 6, color: '#0f766e', weight: 2, fillColor: '#ffffff', fillOpacity: 1 })
+    L.circleMarker(ll, { className: 'mp-visit', radius: 6, color: '#0f766e', weight: 2, fillColor: '#ffffff', fillOpacity: 1 })
       .addTo(map)
       .bindPopup(`<b>${escapeHtml(v.n || '머문 곳')}</b><br>${escapeHtml(hmAt(v.s, tz))} – ${escapeHtml(hmAt(v.e, tz))}<br>${escapeHtml(fmtDur(v.e - v.s))}`);
   });
@@ -149,7 +149,7 @@ function open(el, enc, ds){
   L.marker(latlngs[0], { icon: endIcon('시작 ' + hmAt(t0, tz), 'start'), interactive: false }).addTo(map);
   L.marker(latlngs[n - 1], { icon: endIcon('끝 ' + hmAt(t1, tz), 'end'), interactive: false }).addTo(map);
 
-  const dot = L.circleMarker(latlngs[0], { radius: 8, color: '#ffffff', weight: 3, fillColor: '#059669', fillOpacity: 1 }).addTo(map);
+  const dot = L.circleMarker(latlngs[0], { className: 'mp-dot', radius: 8, color: '#ffffff', weight: 3, fillColor: '#059669', fillOpacity: 1 }).addTo(map);
   dot.bringToFront();
 
   // ── 상태 ──
@@ -165,7 +165,6 @@ function open(el, enc, ds){
   // 1.5~2 사이로 잡혀 flyTo 문턱을 못 넘고 setView로 새는데, Leaflet은 그런
   // 어중간한 변화를 애니메이션하지 못해 결국 순간이동시킨다.
   const curZoom = () => Math.round(map.getZoom());
-  const PAN_SEC = 0.5;
 
   /** 지금 재생 지점 앞뒤로 곧 지나갈/방금 지나온 구간의 범위 */
   function windowBounds(cur){
@@ -197,7 +196,7 @@ function open(el, enc, ds){
     map.flyTo(ll, z, { duration: dur });
   }
 
-  /** 자동 카메라 — 배율은 가끔, 이동은 가장자리에 닿을 때만 */
+  /** 자동 카메라 — 이동은 매 프레임 중앙 고정, 배율은 가끔만 */
   function moveCamera(cur, force){
     if(destroyed || !follow) return;
     // 움직이는 중엔 새 목적지를 주지 않는다. 다만 재생 시작·스크럽 정착처럼
@@ -216,16 +215,11 @@ function open(el, enc, ds){
         return;
       }
     }
-    // 배율은 그대로 두고, 마커가 화면 가운데 60%를 벗어날 때만 옮긴다
-    const size = map.getSize();
-    const pt = map.latLngToContainerPoint(ll);
-    const mx = size.x * 0.2, my = size.y * 0.2;
-    if(pt.x < mx || pt.x > size.x - mx || pt.y < my || pt.y > size.y - my){
-      // 팬도 끝날 때까지 잠근다. 안 그러면 빠르게 움직일 때 프레임마다 재중앙정렬이
-      // 걸려 초당 수십 번 panTo가 터진다.
-      busyUntil = performance.now() + PAN_SEC * 1000 + 60;
-      map.panTo(ll, { animate: true, duration: PAN_SEC });
-    }
+    // 배율은 그대로 두고 마커를 늘 화면 한가운데 붙들어 둔다.
+    // 예전엔 마커가 가장자리(가운데 60%)를 벗어날 때만 중앙으로 되돌렸는데,
+    // 그러면 0.5초마다 화면이 툭 튀어 흔들리는 느낌이 났다. 매 프레임 조금씩
+    // 흘리면 튀는 순간 자체가 없다 — 내비게이션이 쓰는 방식이다.
+    map.panTo(ll, { animate: false });
   }
 
   function render(opts){
@@ -253,6 +247,10 @@ function open(el, enc, ds){
     map.stop();                       // 날아가던 중이면 그 자리에서 멈춰 사용자에게 넘긴다
     followBtn.classList.remove('on');
   }
+  // 확대가 끝나는 순간 Leaflet이 소수 배율을 정수로 스냅하면서 투영이 바뀐다.
+  // 다음 프레임을 기다리면 그 한 프레임이 화면에서 168px 튄다. 여기서 바로 잡는다.
+  map.on('zoomend', () => { if(follow && !destroyed) map.panTo([at(p).lat, at(p).lng], { animate: false }); });
+
   map.on('dragstart', userTookOver);                                   // 끌기
   mapEl.addEventListener('wheel', userTookOver, { passive: true });    // 휠 확대
   mapEl.addEventListener('dblclick', userTookOver);                    // 더블클릭 확대
@@ -272,6 +270,14 @@ function open(el, enc, ds){
     if(!last) last = now;
     const dt = now - last;
     last = now;
+    // 배율이 바뀌는 동안에는 시간을 흘리지 않는다 — 마커를 세워두고 카메라만 옮긴다.
+    // 확대와 이동이 겹치면 무엇이 움직이는지 읽기 어렵다.
+    // (지도는 flyTo가 스스로 몰고 있으므로 여기서 아무것도 안 해도 진행된다)
+    if(follow && isBusy()){
+      render();
+      raf = requestAnimationFrame(tick);
+      return;
+    }
     p += dt / (BASE_MS / SPEEDS[speedIdx]);
     if(p >= 1){ p = 1; render({ camera: true }); stop(true); return; }
     render({ camera: true });
