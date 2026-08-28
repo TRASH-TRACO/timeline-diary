@@ -30,8 +30,15 @@ const STILL_CAP_RATIO = 0.04;
 const CAM_SPAN = 0.05;              // 재생 진행도 앞뒤 5%
 const CAM_SAMPLES = 24;
 const CAM_MIN_ZOOM = 3, CAM_MAX_ZOOM = 17;
-const CAM_ZOOM_STEP = 0.8;          // 이만큼 차이 나야 배율을 바꾼다 (덜덜 떠는 것 방지)
-const CAM_INTERVAL_MS = 600;        // 배율 재계산 주기
+// 한 단계 차이로는 배율을 바꾸지 않는다. 그 정도로 따라가면 화면이 계속 들썩이고,
+// 어차피 두 단계 이상 벌어져야 "안 보인다"는 느낌이 든다.
+// 덕분에 실제로 일어나는 배율 변화는 전부 두 단계 이상 = 전부 flyTo로 간다.
+const CAM_ZOOM_STEP = 1.5;
+const CAM_INTERVAL_MS = 600;        // 카메라 점검 주기
+// 배율은 이 간격 안에 두 번 바꾸지 않는다. 600ms마다 한 단계씩 따라가면
+// 9초에 여섯 번씩 바뀌어 화면이 계속 들썩인다.
+const ZOOM_COOLDOWN_MS = 1400;
+
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
@@ -113,12 +120,18 @@ function open(el, enc, ds){
   const wholeBtn = el.querySelector('.mp-whole');
   const distEl = el.querySelector('.mp-dist');
 
-  const map = L.map(mapEl, { zoomControl: true, attributionControl: true, preferCanvas: true });
+  // 렌더러는 기본값(SVG)을 쓴다. 하루 경로는 점이 300개 이하라 SVG로 충분하고,
+  // 캔버스 렌더러는 지도를 없앤 뒤 예약된 다시그리기가 돌면서 clearRect로 터진다.
+  const map = L.map(mapEl, { zoomControl: true, attributionControl: true });
   L.tileLayer(TILE.url, { attribution: TILE.attribution, maxZoom: TILE.maxZoom }).addTo(map);
 
   const latlngs = pts.map(p => [p[0], p[1]]);
   const bounds = L.latLngBounds(latlngs);
-  map.fitBounds(bounds, { padding: [28, 28], maxZoom: 16 });
+  // 첫 자리잡기는 애니메이션 없이. Leaflet의 CSS 줌 전환은 끝날 때 콜백이 도는데,
+  // 그 사이에 지도가 사라지면(날짜 전환·탭 이동) _onZoomTransitionEnd가 이미 없는
+  // 팬을 읽어 '_leaflet_pos'로 터진다.
+  const FIT = { padding: [28, 28], maxZoom: 16, animate: false };
+  map.fitBounds(bounds, FIT);
 
   // 아직 안 지나간 길은 옅게 깔아 두고, 지나간 만큼 진하게 덧그린다
   L.polyline(latlngs, { color: '#94a3b8', weight: 3, opacity: 0.45, lineJoin: 'round' }).addTo(map);
@@ -141,7 +154,18 @@ function open(el, enc, ds){
 
   // ── 상태 ──
   let p = 0, playing = false, speedIdx = 0, follow = true, raf = null, last = 0;
-  let lastCam = 0, settle = null;
+  let lastCam = 0, lastZoomAt = 0, settle = null, initTimer = null, destroyed = false;
+  // 카메라가 움직이는 중임을 "언제까지"로 관리한다. moveend/zoomend로 플래그를
+  // 내리면 직전 동작의 moveend가 새 비행 직후에 도착해 플래그를 지워버리고,
+  // 그 틈에 panTo가 끼어들어 비행을 중간에서 잘라 먹는다(z15→z8이 z9에서 끊겼다).
+  // 우리가 요청한 시간은 우리가 알고 있으니 이벤트에 기대지 않는다.
+  let busyUntil = 0;
+  const isBusy = () => performance.now() < busyUntil;
+  // flyTo가 도는 동안 getZoom()은 소수(예: 9.4)를 돌려준다. 그대로 쓰면 델타가
+  // 1.5~2 사이로 잡혀 flyTo 문턱을 못 넘고 setView로 새는데, Leaflet은 그런
+  // 어중간한 변화를 애니메이션하지 못해 결국 순간이동시킨다.
+  const curZoom = () => Math.round(map.getZoom());
+  const PAN_SEC = 0.5;
 
   /** 지금 재생 지점 앞뒤로 곧 지나갈/방금 지나온 구간의 범위 */
   function windowBounds(cur){
@@ -155,18 +179,40 @@ function open(el, enc, ds){
     return L.latLngBounds(lls).pad(0.25);
   }
 
+  /**
+   * 배율을 바꿔 옮긴다.
+   * 두 단계 이상 벌어지면 flyTo로 간다 — Leaflet의 setView는 zoomAnimationThreshold
+   * (기본 4)를 넘는 변화를 아예 애니메이션하지 않고 순간이동시켜서, 여행 간 날
+   * z15→z7 같은 변화가 정확히 거기 걸려 뚝 끊겼다.
+   */
+  function applyView(ll, z, instant){
+    if(instant){ map.setView(ll, z, { animate: false }); return; }
+    // 배율이 바뀔 땐 언제나 flyTo를 쓴다. setView의 애니메이션은 CSS 전환이라
+    //  · zoomAnimationThreshold(기본 4)를 넘으면 아예 애니메이션하지 않고 순간이동하고
+    //  · 전환이 끝날 때 도는 콜백이 지도가 사라진 뒤에 터진다
+    // flyTo는 프레임마다 직접 옮기므로 두 문제가 다 없다.
+    const delta = Math.abs(z - curZoom());
+    const dur = clamp(0.6 + delta * 0.09, 0.6, 1.5);
+    busyUntil = performance.now() + dur * 1000 + 80;   // 끝날 때까지 새 목적지를 받지 않는다
+    map.flyTo(ll, z, { duration: dur });
+  }
+
   /** 자동 카메라 — 배율은 가끔, 이동은 가장자리에 닿을 때만 */
   function moveCamera(cur, force){
-    if(!follow) return;
+    if(destroyed || !follow) return;
+    // 움직이는 중엔 새 목적지를 주지 않는다. 다만 재생 시작·스크럽 정착처럼
+    // 사용자가 방금 시킨 일(force)은 기다리게 두면 안 된다.
+    if(!force && isBusy()) return;
     const ll = [cur.lat, cur.lng];
     const now = performance.now();
-    if(force || now - lastCam > CAM_INTERVAL_MS){
+    if(force || (now - lastCam > CAM_INTERVAL_MS && now - lastZoomAt > ZOOM_COOLDOWN_MS)){
       lastCam = now;
       const b = windowBounds(cur);
-      let z = map.getBoundsZoom(b, false);
-      z = clamp(z, CAM_MIN_ZOOM, CAM_MAX_ZOOM);
-      if(force || Math.abs(z - map.getZoom()) >= CAM_ZOOM_STEP){
-        map.setView(ll, Math.round(z), { animate: !force, duration: 0.6 });
+      let z = clamp(map.getBoundsZoom(b, false), CAM_MIN_ZOOM, CAM_MAX_ZOOM);
+      const delta = Math.abs(z - curZoom());
+      if(force || delta >= CAM_ZOOM_STEP){
+        lastZoomAt = now;
+        applyView(ll, Math.round(z), force === 'instant');
         return;
       }
     }
@@ -175,11 +221,15 @@ function open(el, enc, ds){
     const pt = map.latLngToContainerPoint(ll);
     const mx = size.x * 0.2, my = size.y * 0.2;
     if(pt.x < mx || pt.x > size.x - mx || pt.y < my || pt.y > size.y - my){
-      map.panTo(ll, { animate: true, duration: 0.4 });
+      // 팬도 끝날 때까지 잠근다. 안 그러면 빠르게 움직일 때 프레임마다 재중앙정렬이
+      // 걸려 초당 수십 번 panTo가 터진다.
+      busyUntil = performance.now() + PAN_SEC * 1000 + 60;
+      map.panTo(ll, { animate: true, duration: PAN_SEC });
     }
   }
 
   function render(opts){
+    if(destroyed) return;
     const s = at(p);
     const ll = [s.lat, s.lng];
     dot.setLatLng(ll);
@@ -199,6 +249,8 @@ function open(el, enc, ds){
   function userTookOver(){
     if(!follow) return;
     follow = false;
+    busyUntil = 0;
+    map.stop();                       // 날아가던 중이면 그 자리에서 멈춰 사용자에게 넘긴다
     followBtn.classList.remove('on');
   }
   map.on('dragstart', userTookOver);                                   // 끌기
@@ -261,26 +313,34 @@ function open(el, enc, ds){
   // 하루 전체를 다시 보고 싶을 때
   wholeBtn.addEventListener('click', () => {
     follow = false;
+    busyUntil = 0;
     followBtn.classList.remove('on');
-    map.fitBounds(bounds, { padding: [28, 28], maxZoom: 16 });
+    map.stop();
+    map.flyToBounds(bounds, { padding: [28, 28], maxZoom: 16, duration: 0.8 });
   });
 
   // 컨테이너가 자리를 잡은 뒤에 크기를 다시 재야 타일이 어긋나지 않는다
-  const ro = new ResizeObserver(() => map.invalidateSize());
+  const ro = new ResizeObserver(() => { if(!destroyed) map.invalidateSize(); });
   ro.observe(mapEl);
-  setTimeout(() => {
+  initTimer = setTimeout(() => {
+    if(destroyed) return;
     map.invalidateSize();
-    map.fitBounds(bounds, { padding: [28, 28], maxZoom: 16 });
+    map.fitBounds(bounds, FIT);
   }, 60);
 
-  render();
+  render({ camera: true, force: 'instant' });   // 첫 자리잡기만 즉시
 
   const ctl = {
     map,                       // Leaflet 인스턴스 — 바깥에서 손댈 일이 있으면 여기로
     destroy(){
+      // 순서가 중요하다. 날아가던 애니메이션이나 예약된 콜백이 지도가 사라진 뒤에
+      // 돌면 Leaflet 내부에서 '_leaflet_pos' 오류가 난다 (날짜를 빠르게 넘길 때 났다).
+      destroyed = true;
       stop(false);
       clearTimeout(settle);
+      clearTimeout(initTimer);
       ro.disconnect();
+      map.stop();                       // 진행 중인 flyTo/panTo 중단
       map.remove();
       el.innerHTML = '';
       if(window.DiaryMap.current === ctl) window.DiaryMap.current = null;
