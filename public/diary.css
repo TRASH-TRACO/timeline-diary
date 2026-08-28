@@ -182,6 +182,17 @@ code{font-family:var(--font-mono);font-size:.92em;background:var(--bg3);padding:
   font-size:11px;font-weight:600;color:#0f172a;background:rgba(255,255,255,.92);
   border:1px solid #cbd5e1;border-radius:100px;padding:2px 8px;box-shadow:0 1px 3px rgba(15,23,42,.2);}
 
+/* 카카오맵을 쓸 때의 표식 — CustomOverlay(HTML)로 그리므로 크기가 픽셀 고정이다.
+   (Leaflet은 SVG로 그려서 위쪽 규칙들이 적용된다) */
+.mp-k-dot{width:16px;height:16px;border-radius:50%;background:#059669;
+  border:3px solid #fff;box-shadow:0 1px 4px rgba(15,23,42,.4);}
+.mp-k-visit{width:12px;height:12px;border-radius:50%;background:#fff;
+  border:2px solid #0f766e;cursor:pointer;}
+.mp-kpin{white-space:nowrap;font-size:11px;font-weight:600;color:#0f172a;
+  background:rgba(255,255,255,.92);border:1px solid #cbd5e1;border-radius:100px;
+  padding:2px 8px;box-shadow:0 1px 3px rgba(15,23,42,.2);transform:translateY(-18px);}
+.mp-k-info{padding:8px 10px;font-size:12px;line-height:1.6;color:#0f172a;}
+
 .mp-ctl{display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap;}
 .mp-btn{flex:none;padding:6px 12px;font-size:12px;font-weight:500;border-radius:var(--r2);
   border:1px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer;

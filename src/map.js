@@ -2,18 +2,11 @@
 // 지도 재생기 — 하루의 이동을 지도 위에서 애니메이션으로
 // ══════════════════════════════════════════
 //
-// 기본 배경지도는 OpenStreetMap이다. 키가 필요 없어 설정 없이 바로 돌아간다.
-// 카카오맵·네이버맵으로 갈아탈 자리는 TILE 하나로 모아두었다 — 그쪽은 키 발급과
-// 도메인 등록이 필요하고 SDK도 Leaflet이 아니라서, 바꿀 때는 이 파일만 손대면 된다.
+// 이 파일은 "무엇을 어떻게 보여줄지"만 안다. 지도 자체를 다루는 일(배율·표식·이벤트)은
+// src/map/ 아래 어댑터가 맡는다. 덕분에 배경지도를 Leaflet에서 카카오맵으로 갈아끼워도
+// 재생 타임라인과 자동 카메라 — 이 앱에서 정작 까다로운 부분 — 는 그대로다.
 
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
-
-const TILE = {
-  url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> 기여자',
-  maxZoom: 19,
-};
+import { createAdapter } from './map/index.js';
 
 // 하루 전체를 몇 초에 재생할지 (배속 1× 기준). 실제 24시간을 그대로 틀 수는 없다.
 const BASE_MS = 24000;
@@ -22,14 +15,14 @@ const SPEEDS = [1, 2, 4, 8];
 const STILL_CAP_RATIO = 0.04;
 
 // 자동 카메라 — 하루 전체에 배율을 고정하면 여행 간 날은 도착지에서 걸어다닌 게
-// 점 하나로 뭉개진다. 재생 지점 앞뒤 CAM_WINDOW_MS 동안의 움직임만 화면에 담아
-// 배율을 따라 바꾼다. KTX로 이동 중이면 알아서 넓어지고, 골목을 걸으면 좁아진다.
+// 점 하나로 뭉개진다. 재생 지점 앞뒤 구간만 화면에 담아 배율을 따라 바꾼다.
+// KTX로 이동 중이면 알아서 넓어지고, 골목을 걸으면 좁아진다.
 // 창의 크기는 "기록된 점"이 아니라 재생 진행도 기준이다. 긴 직선 구간(KTX·비행기)은
 // 경로 단순화 때 점 두 개로 줄어들어서, 시간 창으로 주변 점을 모으면 그 사이에선
 // 볼 게 없어져 최대 배율로 확대돼 버린다. 재생될 경로를 직접 샘플링하면 그 문제가 없다.
 const CAM_SPAN = 0.05;              // 재생 진행도 앞뒤 5%
 const CAM_SAMPLES = 24;
-const CAM_MIN_ZOOM = 3, CAM_MAX_ZOOM = 17;
+const CAM_PAD = 0.25;               // 화면에 담을 때 사방 여유
 // 한 단계 차이로는 배율을 바꾸지 않는다. 그 정도로 따라가면 화면이 계속 들썩이고,
 // 어차피 두 단계 이상 벌어져야 "안 보인다"는 느낌이 든다.
 // 덕분에 실제로 일어나는 배율 변화는 전부 두 단계 이상 = 전부 flyTo로 간다.
@@ -49,7 +42,7 @@ const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
  * @param {string} ds        'YYYY-MM-DD'
  * @returns {{destroy:Function}}
  */
-function open(el, enc, ds){
+async function open(el, enc, ds){
   const r = DiaryTimeline.decodeRoute(enc);
   if(!r){ el.innerHTML = ''; return { destroy(){} }; }
   const pts = r.points, tz = r.tz;
@@ -120,37 +113,28 @@ function open(el, enc, ds){
   const wholeBtn = el.querySelector('.mp-whole');
   const distEl = el.querySelector('.mp-dist');
 
-  // 렌더러는 기본값(SVG)을 쓴다. 하루 경로는 점이 300개 이하라 SVG로 충분하고,
-  // 캔버스 렌더러는 지도를 없앤 뒤 예약된 다시그리기가 돌면서 clearRect로 터진다.
-  const map = L.map(mapEl, { zoomControl: true, attributionControl: true });
-  L.tileLayer(TILE.url, { attribution: TILE.attribution, maxZoom: TILE.maxZoom }).addTo(map);
+  const { adapter: map, fellBack } = await createAdapter(mapEl);
+  if(fellBack) showToast('카카오맵을 쓰지 못해 기본 지도로 표시합니다');
 
-  const latlngs = pts.map(p => [p[0], p[1]]);
-  const bounds = L.latLngBounds(latlngs);
-  // 첫 자리잡기는 애니메이션 없이. Leaflet의 CSS 줌 전환은 끝날 때 콜백이 도는데,
-  // 그 사이에 지도가 사라지면(날짜 전환·탭 이동) _onZoomTransitionEnd가 이미 없는
-  // 팬을 읽어 '_leaflet_pos'로 터진다.
-  const FIT = { padding: [28, 28], maxZoom: 16, animate: false };
-  map.fitBounds(bounds, FIT);
+  const latlngs = pts.map(q => [q[0], q[1]]);
+  map.fitBounds(latlngs, 28);
 
   // 아직 안 지나간 길은 옅게 깔아 두고, 지나간 만큼 진하게 덧그린다
-  L.polyline(latlngs, { color: '#94a3b8', weight: 3, opacity: 0.45, lineJoin: 'round' }).addTo(map);
-  const trail = L.polyline([latlngs[0]], { className: 'mp-trail', color: '#10b981', weight: 5, opacity: 0.95, lineJoin: 'round' }).addTo(map);
+  map.line(latlngs, { cls: 'mp-base', color: '#94a3b8', weight: 3, opacity: 0.45 });
+  const trail = map.line([latlngs[0]], { cls: 'mp-trail', color: '#10b981', weight: 5, opacity: 0.95 });
 
   // 머문 곳
   (r.visits || []).forEach(v => {
-    const ll = [v.a / 1e5, v.o / 1e5];
-    L.circleMarker(ll, { className: 'mp-visit', radius: 6, color: '#0f766e', weight: 2, fillColor: '#ffffff', fillOpacity: 1 })
-      .addTo(map)
-      .bindPopup(`<b>${escapeHtml(v.n || '머문 곳')}</b><br>${escapeHtml(hmAt(v.s, tz))} – ${escapeHtml(hmAt(v.e, tz))}<br>${escapeHtml(fmtDur(v.e - v.s))}`);
+    map.visit([v.a / 1e5, v.o / 1e5],
+      { cls: 'mp-visit', radius: 6, stroke: '#0f766e', weight: 2, fill: '#ffffff' },
+      `<b>${escapeHtml(v.n || '머문 곳')}</b><br>${escapeHtml(hmAt(v.s, tz))} – ${escapeHtml(hmAt(v.e, tz))}<br>${escapeHtml(fmtDur(v.e - v.s))}`);
   });
   // 시작·끝은 색이 아니라 글자로 구분한다
-  const endIcon = (text, cls) => L.divIcon({ className: 'mp-pin ' + cls, html: `<span>${escapeHtml(text)}</span>`, iconSize: null });
-  L.marker(latlngs[0], { icon: endIcon('시작 ' + hmAt(t0, tz), 'start'), interactive: false }).addTo(map);
-  L.marker(latlngs[n - 1], { icon: endIcon('끝 ' + hmAt(t1, tz), 'end'), interactive: false }).addTo(map);
+  map.label(latlngs[0],     escapeHtml('시작 ' + hmAt(t0, tz)), 'start');
+  map.label(latlngs[n - 1], escapeHtml('끝 ' + hmAt(t1, tz)),   'end');
 
-  const dot = L.circleMarker(latlngs[0], { className: 'mp-dot', radius: 8, color: '#ffffff', weight: 3, fillColor: '#059669', fillOpacity: 1 }).addTo(map);
-  dot.bringToFront();
+  const dot = map.dot(latlngs[0],
+    { cls: 'mp-dot', radius: 8, stroke: '#ffffff', weight: 3, fill: '#059669', front: true });
 
   // ── 상태 ──
   let p = 0, playing = false, speedIdx = 0, follow = true, raf = null, last = 0;
@@ -161,21 +145,19 @@ function open(el, enc, ds){
   // 우리가 요청한 시간은 우리가 알고 있으니 이벤트에 기대지 않는다.
   let busyUntil = 0;
   const isBusy = () => performance.now() < busyUntil;
-  // flyTo가 도는 동안 getZoom()은 소수(예: 9.4)를 돌려준다. 그대로 쓰면 델타가
-  // 1.5~2 사이로 잡혀 flyTo 문턱을 못 넘고 setView로 새는데, Leaflet은 그런
-  // 어중간한 변화를 애니메이션하지 못해 결국 순간이동시킨다.
-  const curZoom = () => Math.round(map.getZoom());
+  // 비행 중에는 배율이 소수(예: 9.4)로 돌아온다. 그대로 비교하면 델타가 어중간하게
+  // 잡혀 판단이 흔들리므로 반올림해서 본다.
+  const curZoom = () => Math.round(map.zoom());
 
-  /** 지금 재생 지점 앞뒤로 곧 지나갈/방금 지나온 구간의 범위 */
-  function windowBounds(cur){
+  /** 지금 재생 지점 앞뒤로 곧 지나갈/방금 지나온 구간 */
+  function windowPath(cur){
     const a = clamp(p - CAM_SPAN, 0, 1), b = clamp(p + CAM_SPAN, 0, 1);
     const lls = [[cur.lat, cur.lng]];
     for(let i = 0; i <= CAM_SAMPLES; i++){
       const s = at(a + (b - a) * i / CAM_SAMPLES);
       lls.push([s.lat, s.lng]);
     }
-    // 한자리에 머무는 중이면 범위가 거의 0이 된다 — 동네가 보일 만큼은 넓혀준다
-    return L.latLngBounds(lls).pad(0.25);
+    return lls;
   }
 
   /**
@@ -185,15 +167,15 @@ function open(el, enc, ds){
    * z15→z7 같은 변화가 정확히 거기 걸려 뚝 끊겼다.
    */
   function applyView(ll, z, instant){
-    if(instant){ map.setView(ll, z, { animate: false }); return; }
-    // 배율이 바뀔 땐 언제나 flyTo를 쓴다. setView의 애니메이션은 CSS 전환이라
+    if(instant){ map.setView(ll, z); return; }
+    // 배율이 바뀔 땐 언제나 flyTo(어댑터의 '애니메이션 이동')를 쓴다.
+    // Leaflet의 setView 애니메이션은 CSS 전환이라
     //  · zoomAnimationThreshold(기본 4)를 넘으면 아예 애니메이션하지 않고 순간이동하고
-    //  · 전환이 끝날 때 도는 콜백이 지도가 사라진 뒤에 터진다
-    // flyTo는 프레임마다 직접 옮기므로 두 문제가 다 없다.
+    //  · 전환이 끝날 때 도는 콜백이 지도가 사라진 뒤에 터진다.
     const delta = Math.abs(z - curZoom());
-    const dur = clamp(0.6 + delta * 0.09, 0.6, 1.5);
+    const dur = clamp(0.6 + delta * 0.09, 0.6, 1.5);   // 초
     busyUntil = performance.now() + dur * 1000 + 80;   // 끝날 때까지 새 목적지를 받지 않는다
-    map.flyTo(ll, z, { duration: dur });
+    map.flyTo(ll, z, dur);
   }
 
   /** 자동 카메라 — 이동은 매 프레임 중앙 고정, 배율은 가끔만 */
@@ -206,8 +188,7 @@ function open(el, enc, ds){
     const now = performance.now();
     if(force || (now - lastCam > CAM_INTERVAL_MS && now - lastZoomAt > ZOOM_COOLDOWN_MS)){
       lastCam = now;
-      const b = windowBounds(cur);
-      let z = clamp(map.getBoundsZoom(b, false), CAM_MIN_ZOOM, CAM_MAX_ZOOM);
+      const z = map.fitZoom(windowPath(cur), CAM_PAD);
       const delta = Math.abs(z - curZoom());
       if(force || delta >= CAM_ZOOM_STEP){
         lastZoomAt = now;
@@ -219,15 +200,15 @@ function open(el, enc, ds){
     // 예전엔 마커가 가장자리(가운데 60%)를 벗어날 때만 중앙으로 되돌렸는데,
     // 그러면 0.5초마다 화면이 툭 튀어 흔들리는 느낌이 났다. 매 프레임 조금씩
     // 흘리면 튀는 순간 자체가 없다 — 내비게이션이 쓰는 방식이다.
-    map.panTo(ll, { animate: false });
+    map.panTo(ll);
   }
 
   function render(opts){
     if(destroyed) return;
     const s = at(p);
     const ll = [s.lat, s.lng];
-    dot.setLatLng(ll);
-    trail.setLatLngs(latlngs.slice(0, (s.i || 0) + 1).concat([ll]));
+    dot.setPosition(ll);
+    trail.setPath(latlngs.slice(0, (s.i || 0) + 1).concat([ll]));
     timeEl.textContent = hmAt(s.ms, tz);
     distEl.textContent = fmtDist(s.dist);
     scrub.value = String(Math.round(p * 1000));
@@ -247,23 +228,10 @@ function open(el, enc, ds){
     map.stop();                       // 날아가던 중이면 그 자리에서 멈춰 사용자에게 넘긴다
     followBtn.classList.remove('on');
   }
-  // 확대가 끝나는 순간 Leaflet이 소수 배율을 정수로 스냅하면서 투영이 바뀐다.
+  // 확대가 끝나는 순간 지도가 소수 배율을 정수로 스냅하면서 투영이 바뀐다.
   // 다음 프레임을 기다리면 그 한 프레임이 화면에서 168px 튄다. 여기서 바로 잡는다.
-  map.on('zoomend', () => { if(follow && !destroyed) map.panTo([at(p).lat, at(p).lng], { animate: false }); });
-
-  map.on('dragstart', userTookOver);                                   // 끌기
-  mapEl.addEventListener('wheel', userTookOver, { passive: true });    // 휠 확대
-  mapEl.addEventListener('dblclick', userTookOver);                    // 더블클릭 확대
-  mapEl.addEventListener('keydown', e => {                             // 키보드 +/-
-    if(['+', '-', '=', '_'].includes(e.key)) userTookOver();
-  });
-  mapEl.addEventListener('touchstart', e => {                          // 두 손가락 핀치
-    if(e.touches && e.touches.length > 1) userTookOver();
-  }, { passive: true });
-  // 확대/축소 버튼 — Leaflet이 컨트롤에서 클릭 전파를 막으므로 캡처 단계에서 받는다
-  mapEl.addEventListener('click', e => {
-    if(e.target.closest && e.target.closest('.leaflet-control-zoom')) userTookOver();
-  }, true);
+  map.onZoomEnd(() => { if(follow && !destroyed) map.panTo([at(p).lat, at(p).lng]); });
+  map.onUserGesture(userTookOver);
 
   function tick(now){
     if(!playing) return;
@@ -322,22 +290,23 @@ function open(el, enc, ds){
     busyUntil = 0;
     followBtn.classList.remove('on');
     map.stop();
-    map.flyToBounds(bounds, { padding: [28, 28], maxZoom: 16, duration: 0.8 });
+    map.flyToBounds(latlngs, 28, 0.8);
   });
 
   // 컨테이너가 자리를 잡은 뒤에 크기를 다시 재야 타일이 어긋나지 않는다
-  const ro = new ResizeObserver(() => { if(!destroyed) map.invalidateSize(); });
+  const ro = new ResizeObserver(() => { if(!destroyed) map.relayout(); });
   ro.observe(mapEl);
   initTimer = setTimeout(() => {
     if(destroyed) return;
-    map.invalidateSize();
-    map.fitBounds(bounds, FIT);
+    map.relayout();
+    map.fitBounds(latlngs, 28);
   }, 60);
 
   render({ camera: true, force: 'instant' });   // 첫 자리잡기만 즉시
 
   const ctl = {
-    map,                       // Leaflet 인스턴스 — 바깥에서 손댈 일이 있으면 여기로
+    map,                       // 지도 어댑터 — 바깥에서 손댈 일이 있으면 여기로
+    provider: map.name,
     destroy(){
       // 순서가 중요하다. 날아가던 애니메이션이나 예약된 콜백이 지도가 사라진 뒤에
       // 돌면 Leaflet 내부에서 '_leaflet_pos' 오류가 난다 (날짜를 빠르게 넘길 때 났다).
@@ -346,8 +315,8 @@ function open(el, enc, ds){
       clearTimeout(settle);
       clearTimeout(initTimer);
       ro.disconnect();
-      map.stop();                       // 진행 중인 flyTo/panTo 중단
-      map.remove();
+      map.stop();                       // 진행 중인 애니메이션 중단
+      map.destroy();
       el.innerHTML = '';
       if(window.DiaryMap.current === ctl) window.DiaryMap.current = null;
     }

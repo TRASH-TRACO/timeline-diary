@@ -152,7 +152,8 @@ function renderMonthSummary(){
 
 // ── 하루 패널 ───────────────────────────────
 let _noteTimer = null;
-let _player = null;                       // 열려 있는 지도 재생기 (Leaflet은 직접 치워줘야 한다)
+let _player = null;                       // 열려 있는 지도 재생기 (직접 치워줘야 한다)
+let _playerToken = 0;                     // 지도를 여는 사이에 날짜가 바뀌었는지 가리는 표
 let dayView = 'svg';                      // 'svg' | 'map'
 try{ const v = localStorage.getItem('diary_dayview'); if(v === 'map' || v === 'svg') dayView = v; }catch(_){}
 
@@ -172,6 +173,7 @@ window.setDayView = setDayView;
 function renderRouteArea(){
   const box = $('pn-route');
   if(!box) return;
+  _playerToken++;                          // 열리는 중인 지도가 있으면 버린다
   if(_player){ _player.destroy(); _player = null; }
   const rec = DiaryStore.getDay(selDate) || {};
   if(!rec.route){
@@ -187,7 +189,16 @@ function renderRouteArea(){
   if(dayView === 'map'){
     if(window.DiaryMap){
       box.innerHTML = '';
-      _player = window.DiaryMap.open(box, rec.route, selDate);
+      // 지도는 비동기로 열린다(카카오는 SDK를 받아와야 한다). 여는 사이에 날짜를
+      // 넘겼으면 뒤늦게 도착한 지도는 그대로 치운다.
+      const token = ++_playerToken;
+      window.DiaryMap.open(box, rec.route, selDate).then(pl => {
+        if(token !== _playerToken){ pl.destroy(); return; }
+        _player = pl;
+      }).catch(e => {
+        console.warn('[map] 지도를 열지 못했습니다:', e);
+        box.innerHTML = '<div class="pn-loading">지도를 불러오지 못했어요</div>';
+      });
     }else{
       box.innerHTML = '<div class="pn-loading">지도를 불러오는 중…</div>';
     }

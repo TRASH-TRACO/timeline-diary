@@ -91,32 +91,60 @@ Firebase 콘솔 → **Firestore Database → 규칙** 탭에 이 저장소의
 
 ---
 
-## 지도 배경 바꾸기 (카카오맵 등)
+## 지도 바꾸기
 
-기본 배경지도는 **OpenStreetMap**입니다. 키도 결제 계정도 필요 없어 설정 없이 바로
-돌아갑니다. 다만 한국 골목·건물명 디테일은 카카오맵·네이버맵이 낫습니다.
+기본은 **Leaflet + OpenStreetMap**입니다. 키도 결제 계정도 필요 없어 설정 없이 돌아갑니다.
 
-바꿀 자리는 [`src/map.js`](./src/map.js) 맨 위 `TILE` 하나로 모아두었습니다.
+지도를 다루는 코드는 [`src/map/`](./src/map) 아래 어댑터로 분리돼 있습니다.
+재생 타임라인과 자동 카메라 — 이 앱에서 정작 까다로운 부분 — 는 지도와 무관하므로,
+배경지도를 갈아끼워도 그쪽은 그대로입니다.
 
-```js
-const TILE = {
-  url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-  attribution: '&copy; OpenStreetMap 기여자',
-  maxZoom: 19,
-};
+```
+src/map/geo.js       배율 계산 (웹 메르카토르 — 지도 라이브러리와 무관, 브라우저 없이 검증 가능)
+src/map/leaflet.js   Leaflet + XYZ 타일  ← 기본
+src/map/kakao.js     카카오맵 SDK
+src/map/index.js     어느 쪽을 쓸지 고르고, 실패하면 되돌린다
 ```
 
-- **다른 타일 서버**(예: 지도 스타일만 교체)라면 이 값만 바꾸면 됩니다.
-- **카카오맵·네이버맵**은 타일 서버를 직접 열어주지 않고 자체 SDK를 씁니다.
-  Leaflet 대신 그 SDK로 갈아타야 하는데, 지도를 다루는 코드가 이 파일 하나에
-  모여 있어 다른 파일은 손댈 필요가 없습니다. 키 발급과 도메인 등록이 따로 필요합니다.
+### ① 타일만 바꾸기 (가장 쉬움)
 
-> OSM 타일 서버는 [이용 정책](https://operations.osmfoundation.org/policies/tiles/)상
+VWorld(국토지리정보원)처럼 일반 XYZ 타일을 주는 곳이면 환경 변수만 넣으면 됩니다.
+한글 지명·건물 디테일이 OSM보다 낫고, Leaflet을 그대로 쓰므로 **아무것도 깨지지 않습니다.**
+
+| 변수 | 예시 |
+|---|---|
+| `VITE_TILE_URL` | `https://api.vworld.kr/req/wmts/1.0.0/{키}/Base/{z}/{y}/{x}.png` |
+| `VITE_TILE_ATTR` | `© VWorld` |
+| `VITE_TILE_MAXZOOM` | `18` |
+
+### ② 카카오맵으로 바꾸기
+
+| 변수 | 값 |
+|---|---|
+| `VITE_MAP_PROVIDER` | `kakao` |
+| `VITE_KAKAO_KEY` | 카카오 개발자 사이트의 **JavaScript 키** |
+
+[developers.kakao.com](https://developers.kakao.com/) → 내 애플리케이션 → 앱 설정 →
+**플랫폼 → Web**에 배포 도메인을 등록해야 SDK가 동작합니다.
+
+> ⚠️ **카카오 어댑터는 검증되지 않았습니다.** 개발 환경에서 카카오 도메인이 막혀 있어
+> SDK를 불러올 수도, 자동 테스트를 돌릴 수도 없었습니다. 그래서 실패하면 조용히
+> OpenStreetMap으로 되돌아가도록 해 두었습니다(이 되돌림 경로는 테스트했습니다).
+> 지도가 아예 안 뜨는 일은 없지만, 카카오 쪽은 직접 보시면서 고쳐야 할 수 있습니다.
+> 특히 이런 것들이 어긋날 수 있습니다.
+>
+> - **레벨 ↔ 배율 대응** — 카카오는 레벨(1~14, 작을수록 확대), Leaflet은 배율(클수록 확대)을
+>   씁니다. `src/map/kakao.js`의 `LEVEL_BASE`가 근사값이라, 확대 정도가 어색하면 이 숫자만 고치면 됩니다.
+> - **어두운 화면** — 카카오는 자체 지도 스타일을 쓰므로 OSM처럼 타일을 반전시키지 않습니다.
+>   다크 모드에서도 지도는 밝게 나옵니다.
+> - **부드러움** — 카카오에는 flyTo가 없어 중심 이동과 레벨 변경을 따로 겁니다.
+
+> 참고: 끊김의 원인은 지도 라이브러리가 아니라 카메라 로직이었습니다(계측상 Leaflet에서
+> 60fps·드롭 0). 지도를 바꾼다고 부드러워지지는 않습니다. 바꿀 이유는 **한국 지도 디테일**입니다.
+
+> OSM 타일은 [이용 정책](https://operations.osmfoundation.org/policies/tiles/)상
 > 대규모 트래픽에는 쓸 수 없습니다. 개인용·소규모라면 문제없지만, 사용자가 늘면
-> 유료 타일 제공자나 카카오맵으로 옮기는 게 맞습니다.
-
-어두운 화면에서는 OSM이 밝은 지도만 제공하므로 CSS 필터로 반전시켜 씁니다
-(`.leaflet-tile-pane`). 어두운 타일을 직접 제공하는 서버로 바꾼다면 그 규칙을 지우세요.
+> 위 ①이나 ②로 옮기는 게 맞습니다.
 
 ## 로컬에서 돌려보기
 
@@ -173,7 +201,8 @@ public/
 src/
   firebase-config.js    Firebase 설정 (환경 변수로 덮어쓰기 가능)
   sync.js               Firebase Auth + Firestore 동기화
-  map.js                지도 재생기 (Leaflet · 배경지도를 바꾸려면 여기만)
+  map.js                지도 재생기 (재생 타임라인 · 자동 카메라 — 지도와 무관)
+  map/                  지도 어댑터 (Leaflet / 카카오맵)
 firestore.rules         보안 규칙 (콘솔에 붙여넣을 것)
 ```
 
