@@ -33,6 +33,13 @@ async function idbSet(k, v){
   try{ return await idbTx('readwrite', s => s.put(v, k)); }
   catch(_){ try{ localStorage.setItem('diary:' + k, JSON.stringify(v)); }catch(__){} }
 }
+/** 접두사로 시작하는 키들 (사진처럼 개수가 유동적인 것) */
+async function idbKeysWithPrefix(prefix){
+  try{
+    const keys = await idbTx('readonly', s => s.getAllKeys());
+    return keys.filter(k => typeof k === 'string' && k.startsWith(prefix));
+  }catch(_){ return []; }
+}
 async function idbDel(k){
   try{ return await idbTx('readwrite', s => s.delete(k)); }
   catch(_){ try{ localStorage.removeItem('diary:' + k); }catch(__){} }

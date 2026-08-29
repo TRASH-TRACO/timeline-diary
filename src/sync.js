@@ -206,6 +206,12 @@ async function reconcile(){
   }
   await pushAllDirty();
   await pushSettings();
+  // 로그인 전에 찍어 둔 사진이 있으면 이제 올린다
+  if(window.DiaryPhotos){
+    window.DiaryPhotos.syncPending()
+      .then(n => { if(n) showToast(`📷 사진 ${n}장을 계정에 올렸어요`); })
+      .catch(() => {});
+  }
   setChip('동기화됨', 'ok');
   subscribe();
 }
@@ -303,6 +309,7 @@ window.DiarySync = {
   signOut(){ return sdkReady ? signOutFn(auth) : Promise.resolve(); },
   syncNow(){ return uid ? pushAllDirty() : Promise.resolve(); },
   isSignedIn(){ return !!uid; },
+  uid(){ return uid; },
   isAvailable(){ return sdkReady; }
 };
 

@@ -278,6 +278,32 @@ code{font-family:var(--font-mono);font-size:.92em;background:var(--bg3);padding:
   border:1px solid var(--border);border-radius:var(--r2);background:var(--bg2);transition:border-color .12s;}
 .tf-text:focus{outline:none;border-color:var(--accent);background:var(--bg);}
 
+/* 사진 */
+.tf-shots{display:flex;gap:8px;flex-wrap:wrap;}
+.tf-shot{position:relative;width:78px;height:78px;border-radius:var(--r2);overflow:hidden;
+  border:1px solid var(--border);background:var(--bg3);flex:none;}
+.tf-shot img{width:100%;height:100%;object-fit:cover;display:block;cursor:zoom-in;}
+.tf-shot.missing{display:flex;align-items:center;justify-content:center;}
+.tf-shot.missing::after{content:'없음';font-size:10px;color:var(--text3);}
+.tf-shot-x{position:absolute;top:3px;right:3px;width:20px;height:20px;padding:0;line-height:1;
+  border:none;border-radius:50%;background:rgba(15,23,42,.6);color:#fff;font-size:11px;
+  cursor:pointer;display:flex;align-items:center;justify-content:center;}
+.tf-shot-x:hover{background:rgba(15,23,42,.85);}
+.tf-shot-add{width:78px;height:78px;flex:none;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:2px;font-size:16px;color:var(--text3);cursor:pointer;
+  border:1px dashed var(--border2);border-radius:var(--r2);background:var(--bg2);transition:all .12s;}
+.tf-shot-add span{font-size:10px;}
+.tf-shot-add:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-bg);}
+.tf-shot-msg:not(:empty){font-size:11px;color:var(--text3);margin-top:6px;}
+
+/* 사진 크게 보기 */
+.shot-view{position:fixed;inset:0;z-index:3000;display:flex;align-items:center;justify-content:center;
+  background:rgba(2,6,23,.9);padding:24px;cursor:zoom-out;}
+.shot-view img{max-width:100%;max-height:100%;border-radius:var(--r2);box-shadow:var(--shadow2);}
+.shot-x{position:absolute;top:16px;right:16px;width:36px;height:36px;border:none;border-radius:50%;
+  background:rgba(255,255,255,.15);color:#fff;font-size:15px;cursor:pointer;}
+.shot-x:hover{background:rgba(255,255,255,.28);}
+
 /* 캘린더 셀의 트랙 배지 */
 .cal-badges{display:flex;gap:3px;flex-wrap:wrap;justify-content:center;margin-top:auto;}
 .cal-badge{font-size:9px;font-weight:600;font-family:var(--font-mono);color:var(--accent);
@@ -344,6 +370,11 @@ code{font-family:var(--font-mono);font-size:.92em;background:var(--bg3);padding:
 .mg-stats>div{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);padding:10px 12px;}
 .mg-stats span{display:block;font-size:10px;color:var(--text3);margin-bottom:2px;}
 .mg-stats b{font-size:14px;font-weight:600;}
+.mg-photos{display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:12px;color:var(--text2);
+  background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);
+  padding:10px 12px;margin-bottom:12px;}
+.mg-photos b{color:var(--text);font-weight:600;}
+.mg-pending{font-size:11px;color:var(--amber-500);}
 .mg-note{font-size:11px;color:var(--text3);line-height:1.7;margin-top:10px;}
 
 .lg-desc{font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:16px;}

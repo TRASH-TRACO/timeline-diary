@@ -7,8 +7,8 @@
 //   이소티논   → 그날 먹은 양 → 짧은 기록
 // 그래서 "무엇을 기록하는가"를 선언으로 적고, 화면은 그 선언을 보고 그린다.
 //
-// 필드 타입이 곧 콘텐츠 계층이다. 지금은 number·text만 있고,
-// photo(사진)·scale(1~5)·bool(했다/안 했다)이 다음 후보다.
+// 필드 타입이 곧 콘텐츠 계층이다. 지금은 number·text·photo가 있고,
+// scale(1~5)·bool(했다/안 했다)이 다음 후보다.
 //
 // 전용 화면이 필요한 트랙은 view를 준다(경로가 그렇다). 나머지는 fields만 적으면
 // 기본 폼이 알아서 그려진다.
@@ -31,6 +31,7 @@ const TRACKS = [
     fields: [
       { key: 'dose', type: 'number', label: '복용량', unit: 'mg',
         min: 0, max: 200, step: 5, quick: [0, 10, 20, 40] },
+      { key: 'photos', type: 'photo', label: '피부 상태', max: 4 },
       // 라벨을 그냥 '기록'으로 두면 아래 '오늘의 일기'와 헷갈린다
       { key: 'note', type: 'text', label: '상태 메모', max: 200,
         placeholder: '피부 상태나 부작용을 짧게' },
@@ -95,6 +96,24 @@ function fieldsHtml(track, val){
           `<span class="tf-unit">${escapeHtml(f.unit || '')}</span>` +
         `</div></div>`;
     }
+    if(f.type === 'photo'){
+      const ids = Array.isArray(v[f.key]) ? v[f.key] : [];
+      const shots = ids.map(pid =>
+        `<div class="tf-shot" data-id="${escapeHtml(pid)}">` +
+          `<img alt="" loading="lazy">` +
+          `<button type="button" class="tf-shot-x" title="사진 빼기" aria-label="사진 빼기">✕</button>` +
+        `</div>`).join('');
+      // 추가 버튼은 가득 찼을 때도 만들어 두고 보이기만 감춘다. 아예 안 그리면
+      // 사진을 뺀 뒤에 되살릴 버튼이 없다.
+      return `<div class="tf" data-key="${f.key}" data-type="photo" data-max="${f.max}">` +
+        `<label class="tf-label">${escapeHtml(f.label)}</label>` +
+        `<div class="tf-shots">${shots}` +
+          `<button type="button" class="tf-shot-add">＋<span>사진</span></button>` +
+        `</div>` +
+        `<input type="file" class="tf-file" accept="image/*" multiple hidden>` +
+        `<div class="tf-shot-msg"></div>` +
+      `</div>`;
+    }
     if(f.type === 'text'){
       const cur = v[f.key] || '';
       return `<div class="tf" data-key="${f.key}" data-type="text">` +
@@ -119,6 +138,9 @@ function wireFields(box, track, onChange){
       if(el.dataset.type === 'number'){
         const raw = el.querySelector('.tf-input').value.trim();
         if(raw !== '' && isFinite(+raw)) out[key] = +raw;
+      }else if(el.dataset.type === 'photo'){
+        const ids = [...el.querySelectorAll('.tf-shot')].map(s => s.dataset.id);
+        if(ids.length) out[key] = ids;
       }else{
         const t = el.querySelector('.tf-text').value.trim();
         if(t) out[key] = t;
@@ -144,6 +166,64 @@ function wireFields(box, track, onChange){
     clearTimeout(timer);
     onChange(read());          // 칩은 눌린 즉시 저장 — 기다릴 이유가 없다
   }));
+  // 사진 — 고르면 줄여서 기기에 담고, 로그인돼 있으면 뒤이어 올라간다
+  box.querySelectorAll('.tf[data-type="photo"]').forEach(el => {
+    const file = el.querySelector('.tf-file');
+    const msg  = el.querySelector('.tf-shot-msg');
+    const max  = +el.dataset.max;
+
+    const paint = () => {
+      el.querySelectorAll('.tf-shot').forEach(async sh => {
+        const img = sh.querySelector('img');
+        if(img.src) return;
+        const u = await DiaryPhotos.url(sh.dataset.id);
+        if(u) img.src = u; else sh.classList.add('missing');
+      });
+      const add = el.querySelector('.tf-shot-add');
+      if(add) add.style.display = el.querySelectorAll('.tf-shot').length >= max ? 'none' : '';
+    };
+    const wireShot = sh => {
+      sh.querySelector('.tf-shot-x').addEventListener('click', async e => {
+        e.stopPropagation();
+        const id = sh.dataset.id;
+        sh.remove();
+        paint();
+        onChange(read());
+        DiaryPhotos.remove(id).catch(() => {});
+      });
+      sh.querySelector('img').addEventListener('click', () => openShot(sh.dataset.id));
+    };
+    el.querySelectorAll('.tf-shot').forEach(wireShot);
+
+    const addBtn = el.querySelector('.tf-shot-add');
+    if(addBtn) addBtn.addEventListener('click', () => file.click());
+    file.addEventListener('change', async () => {
+      const room = max - el.querySelectorAll('.tf-shot').length;
+      const files = [...file.files].slice(0, Math.max(0, room));
+      file.value = '';
+      if(!files.length) return;
+      msg.textContent = '사진 넣는 중…';
+      for(const f of files){
+        try{
+          const id = await DiaryPhotos.add(f);
+          const sh = document.createElement('div');
+          sh.className = 'tf-shot';
+          sh.dataset.id = id;
+          sh.innerHTML = '<img alt=""><button type="button" class="tf-shot-x" title="사진 빼기" aria-label="사진 빼기">✕</button>';
+          el.querySelector('.tf-shots').insertBefore(sh, addBtn);
+          wireShot(sh);
+        }catch(e){
+          msg.textContent = e.message || '사진을 넣지 못했어요';
+          continue;
+        }
+      }
+      msg.textContent = '';
+      paint();
+      onChange(read());
+    });
+    paint();
+  });
+
   box.querySelectorAll('.tf-input, .tf-text').forEach(el => el.addEventListener('input', fire));
   box.querySelectorAll('.tf-input, .tf-text').forEach(el => el.addEventListener('blur', () => {
     clearTimeout(timer); onChange(read());
@@ -152,4 +232,20 @@ function wireFields(box, track, onChange){
   return { flush(){ clearTimeout(timer); onChange(read()); } };
 }
 
-window.DiaryTracks = { TRACKS, trackById, isOn, setOn, tracksFor, fieldsHtml, wireFields, SETTING_KEY };
+/** 사진 크게 보기 */
+function openShot(id){
+  DiaryPhotos.url(id).then(u => {
+    if(!u) return;
+    const box = document.createElement('div');
+    box.className = 'shot-view';
+    box.innerHTML = `<img src="${u}" alt=""><button class="shot-x" aria-label="닫기">✕</button>`;
+    const close = () => box.remove();
+    box.addEventListener('click', close);
+    document.addEventListener('keydown', function esc(e){
+      if(e.key === 'Escape'){ close(); document.removeEventListener('keydown', esc); }
+    });
+    document.body.appendChild(box);
+  });
+}
+
+window.DiaryTracks = { TRACKS, trackById, isOn, setOn, tracksFor, fieldsHtml, wireFields, openShot, SETTING_KEY };

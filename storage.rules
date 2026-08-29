@@ -1,0 +1,22 @@
+// Firebase 콘솔 → Storage → Rules 탭에 붙여넣고 "게시"
+//
+// 사진은 users/{uid}/photos/{id}.jpg 에 저장됩니다.
+// 로그인한 사람은 자기 사진만 읽고 쓸 수 있고, 그 외는 전부 거부됩니다.
+//
+// 크기·형식도 여기서 막습니다. 앱이 올리기 전에 긴 변 1600px·JPEG로 줄이므로
+// 보통 한 장에 200~400KB입니다. 3MB는 넉넉한 상한입니다.
+
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /users/{uid}/photos/{photo} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if request.auth != null
+                   && request.auth.uid == uid
+                   && request.resource.size < 3 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+      allow delete: if request.auth != null && request.auth.uid == uid;
+    }
+  }
+}

@@ -486,7 +486,7 @@ function wireImport(){
 }
 
 // ── 데이터 관리 ─────────────────────────────
-function openManage(){
+async function openManage(){
   const s = DiaryStore.stats();
   const trackRows = DiaryTracks.TRACKS.map(t => {
     const days = (s.trackDays || {})[t.id] || 0;
@@ -510,9 +510,23 @@ function openManage(){
       `<div><span>총 이동</span><b>${fmtDist(s.distM)}</b></div>` +
       `<div><span>기간</span><b>${s.first ? s.first + ' ~ ' + s.last : '—'}</b></div>` +
     `</div>` +
+    `<div id="mg-photos"></div>` +
     `<button class="btn danger" onclick="wipeRoutes()">가져온 경로 전체 삭제</button>` +
-    `<p class="mg-note">일기는 지워지지 않아요. 타임라인을 다시 올리면 경로도 다시 채워집니다.</p>`;
+    `<p class="mg-note">일기와 사진은 지워지지 않아요. 타임라인을 다시 올리면 경로도 다시 채워집니다.</p>`;
   $('manage-modal').style.display = 'flex';
+  // 사진은 이 기기에 있는 것부터 세야 해서 조금 늦게 채운다
+  if(window.DiaryPhotos){
+    try{
+      const u = await DiaryPhotos.usage();
+      const el = $('mg-photos');
+      if(el && u.count){
+        el.innerHTML = `<div class="mg-photos">` +
+          `<span>📷 사진 <b>${fmtNum(u.count)}장</b> · ${(u.bytes / 1048576).toFixed(1)} MB</span>` +
+          (u.pending ? `<span class="mg-pending">아직 못 올린 사진 ${fmtNum(u.pending)}장</span>` : '') +
+        `</div>`;
+      }
+    }catch(_){}
+  }
 }
 function closeManage(){ $('manage-modal').style.display = 'none'; }
 async function wipeRoutes(){
@@ -523,7 +537,8 @@ async function wipeRoutes(){
 }
 async function toggleTrack(id, on){
   await DiaryTracks.setOn(id, on);
-  renderCalendar(); renderPanel(); openManage();
+  renderCalendar(); renderPanel();
+  await openManage();
 }
 window.openManage = openManage;
 window.closeManage = closeManage;
@@ -537,9 +552,11 @@ async function doLogout(keepLocal){
   closeLogout();
   try{ if(window.DiarySync) await window.DiarySync.signOut(); }catch(_){}
   if(!keepLocal){
-    // 이 기기에 남은 사본까지 지운다 (공용 기기용)
+    // 이 기기에 남은 사본까지 지운다 (공용 기기용) — 사진도 같이
     for(const key of DiaryStore.monthKeys()) await idbDel('m:' + key);
+    for(const k of await idbKeysWithPrefix('p:')) await idbDel(k);
     await idbDel('months'); await idbDel('dirty');
+    await idbDel('settings'); await idbDel('settingsDirty'); await idbDel('photoPending');
     try{ localStorage.removeItem(ENTRY_KEY); }catch(_){}
     location.reload();
     return;
