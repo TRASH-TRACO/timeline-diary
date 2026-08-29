@@ -91,13 +91,14 @@ function renderCalendar(){
   for(let d = 1; d <= days; d++){
     const ds = `${calYear}-${pad2(calMonth + 1)}-${pad2(d)}`;
     const rec = DiaryStore.getDay(ds);
+    const route = DiaryStore.getTrack(ds, 'route');
     const dow = (startDow + d - 1) % 7;
     const cell = document.createElement('div');
     cell.className = 'cal-cell';
     cell.dataset.ds = ds;
     if(ds === today)   cell.classList.add('today');
     if(ds === selDate) cell.classList.add('sel');
-    if(rec && rec.route) cell.classList.add('has-route');
+    if(route) cell.classList.add('has-route');
 
     const head = document.createElement('div');
     head.className = 'cal-head';
@@ -114,15 +115,26 @@ function renderCalendar(){
     }
     cell.appendChild(head);
 
-    if(rec && rec.route){
+    if(route){
       const box = document.createElement('div');
       box.className = 'cal-thumb';
-      box.innerHTML = DiaryViz.thumbSVG(rec.route, 46);
+      box.innerHTML = DiaryViz.thumbSVG(route, 46);
       cell.appendChild(box);
       const dist = document.createElement('div');
       dist.className = 'cal-dist';
-      dist.textContent = fmtDist(rec.route.d || 0);
+      dist.textContent = fmtDist(route.d || 0);
       cell.appendChild(dist);
+    }
+    // 경로 말고 다른 트랙 기록은 작은 배지로 (예: 20mg)
+    const badges = DiaryTracks.TRACKS
+      .filter(t => t.id !== 'route' && typeof t.cell === 'function')
+      .map(t => t.cell(DiaryStore.getTrack(ds, t.id)))
+      .filter(c => c && c.badge);
+    if(badges.length){
+      const row = document.createElement('div');
+      row.className = 'cal-badges';
+      row.innerHTML = badges.map(c => `<span class="cal-badge">${escapeHtml(c.badge)}</span>`).join('');
+      cell.appendChild(row);
     }
     cell.onclick = () => { selDate = ds; renderCalendar(); renderPanel(); saveView(); };
     cell.tabIndex = 0;
@@ -139,14 +151,27 @@ function renderMonthSummary(){
   const key = `${calYear}-${pad2(calMonth + 1)}`;
   const m = DiaryStore.getMonth(key, false);
   let routes = 0, notes = 0, dist = 0;
-  if(m) for(const ds in m.days){
+  const byTrack = {};
+  if(m) for(const ds of Object.keys(m.days).sort()){
     const d = m.days[ds];
-    if(d.route){ routes++; dist += d.route.d || 0; }
+    const rt = d.t && d.t.route && d.t.route.v;
+    if(rt){ routes++; dist += rt.d || 0; }
     if(d.note) notes++;
+    for(const t of DiaryTracks.TRACKS){
+      if(t.id === 'route' || typeof t.summary !== 'function') continue;
+      const v = d.t && d.t[t.id] && d.t[t.id].v;
+      if(v) (byTrack[t.id] || (byTrack[t.id] = [])).push({ ds, v });
+    }
   }
-  el.innerHTML = routes || notes
-    ? `<span>경로 <b>${routes}</b>일</span><span>일기 <b>${notes}</b>편</span><span>이동 <b>${fmtDist(dist)}</b></span>`
-    : '<span class="dim">이 달은 아직 비어 있어요</span>';
+  const parts = [];
+  if(routes) parts.push(`<span>경로 <b>${routes}</b>일</span>`, `<span>이동 <b>${fmtDist(dist)}</b></span>`);
+  if(notes)  parts.push(`<span>일기 <b>${notes}</b>편</span>`);
+  for(const id in byTrack){
+    const t = DiaryTracks.trackById(id);
+    const rows = t.summary(byTrack[id]);
+    if(rows) rows.forEach(r => parts.push(`<span>${escapeHtml(r.k)} <b>${escapeHtml(String(r.v))}</b></span>`));
+  }
+  el.innerHTML = parts.length ? parts.join('') : '<span class="dim">이 달은 아직 비어 있어요</span>';
   refreshLocalNote();
 }
 
@@ -175,8 +200,8 @@ function renderRouteArea(){
   if(!box) return;
   _playerToken++;                          // 열리는 중인 지도가 있으면 버린다
   if(_player){ _player.destroy(); _player = null; }
-  const rec = DiaryStore.getDay(selDate) || {};
-  if(!rec.route){
+  const route = DiaryStore.getTrack(selDate, 'route');
+  if(!route){
     box.innerHTML =
       `<div class="pn-empty">` +
         `<div class="pn-empty-ico">🗺️</div>` +
@@ -192,7 +217,7 @@ function renderRouteArea(){
       // 지도는 비동기로 열린다(카카오는 SDK를 받아와야 한다). 여는 사이에 날짜를
       // 넘겼으면 뒤늦게 도착한 지도는 그대로 치운다.
       const token = ++_playerToken;
-      window.DiaryMap.open(box, rec.route, selDate).then(pl => {
+      window.DiaryMap.open(box, route, selDate).then(pl => {
         if(token !== _playerToken){ pl.destroy(); return; }
         _player = pl;
       }).catch(e => {
@@ -205,8 +230,8 @@ function renderRouteArea(){
     return;
   }
   box.innerHTML = '';
-  DiaryViz.renderRoute(box, rec.route, selDate);
-  renderVisitList(box, rec.route);
+  DiaryViz.renderRoute(box, route, selDate);
+  renderVisitList(box, route);
 }
 
 function renderPanel(){
@@ -216,17 +241,29 @@ function renderPanel(){
   const label = `${d.getMonth() + 1}월 ${d.getDate()}일 (${WD[d.getDay()]})`;
   const isToday = selDate === todayStr();
 
+  const route = DiaryStore.getTrack(selDate, 'route');
   let html = `<div class="pn-hdr"><div class="pn-date">${label}${isToday ? '<span class="pn-today">오늘</span>' : ''}</div>`;
-  if(rec.route) html += `<button class="pn-del" onclick="removeRoute()" title="이 날 경로 지우기">경로 삭제</button>`;
+  if(route) html += `<button class="pn-del" onclick="removeRoute()" title="이 날 경로 지우기">경로 삭제</button>`;
   html += `</div>`;
 
-  if(rec.route){
+  if(route){
     html += `<div class="pn-tabs" role="tablist">` +
       `<button class="pn-tab${dayView === 'svg' ? ' on' : ''}" data-view="svg" onclick="setDayView('svg')">한눈에 보기</button>` +
       `<button class="pn-tab${dayView === 'map' ? ' on' : ''}" data-view="map" onclick="setDayView('map')">지도에서 재생</button>` +
     `</div>`;
   }
   html += `<div class="pn-route" id="pn-route"></div>`;
+
+  // 경로 말고 켜져 있는 트랙들 — 선언(fields)만 보고 폼을 그린다
+  DiaryTracks.tracksFor(selDate).forEach(t => {
+    if(t.id === 'route' || !t.fields) return;
+    html += `<section class="pn-track" data-track="${t.id}">` +
+      `<div class="pn-track-hdr"><span class="pn-track-ico">${t.icon}</span>` +
+        `<span class="pn-track-nm">${escapeHtml(t.name)}</span>` +
+        `<span class="pn-track-saved" id="tsaved-${t.id}"></span></div>` +
+      `<div class="pn-track-body">${DiaryTracks.fieldsHtml(t, DiaryStore.getTrack(selDate, t.id))}</div>` +
+    `</section>`;
+  });
 
   html += `<div class="pn-note">` +
     `<label class="pn-note-lbl" for="note-input">오늘의 일기</label>` +
@@ -238,6 +275,21 @@ function renderPanel(){
   panel.innerHTML = html;
 
   renderRouteArea();
+
+  // 트랙 폼 — 입력이 멎으면 저장한다
+  panel.querySelectorAll('.pn-track').forEach(sec => {
+    const t = DiaryTracks.trackById(sec.dataset.track);
+    if(!t) return;
+    DiaryTracks.wireFields(sec.querySelector('.pn-track-body'), t, async val => {
+      const ds = selDate;
+      await DiaryStore.setTrack(ds, t.id, val);
+      if(ds !== selDate) return;
+      const mark = $('tsaved-' + t.id);
+      if(mark){ mark.textContent = '저장됨'; setTimeout(() => { if(mark) mark.textContent = ''; }, 1600); }
+      updateCellBadges(ds);
+      renderMonthSummary();
+    });
+  });
 
   // 일기
   const ta = $('note-input');
@@ -272,6 +324,20 @@ function renderVisitList(el, enc){
       `<span class="visit-dur">${fmtDur(v.e - v.s)}</span></span>`).join('') +
     '</div>';
   el.appendChild(box);
+}
+
+/** 트랙 배지만 즉석 갱신 — 입력 중 전체 재렌더로 포커스를 잃지 않게 */
+function updateCellBadges(ds){
+  const cell = document.querySelector('.cal-cell[data-ds="' + ds + '"]');
+  if(!cell) return;
+  const badges = DiaryTracks.TRACKS
+    .filter(t => t.id !== 'route' && typeof t.cell === 'function')
+    .map(t => t.cell(DiaryStore.getTrack(ds, t.id)))
+    .filter(c => c && c.badge);
+  let row = cell.querySelector('.cal-badges');
+  if(!badges.length){ if(row) row.remove(); return; }
+  if(!row){ row = document.createElement('div'); row.className = 'cal-badges'; cell.appendChild(row); }
+  row.innerHTML = badges.map(c => `<span class="cal-badge">${escapeHtml(c.badge)}</span>`).join('');
 }
 
 /** 일기 표식(✎)만 즉석 갱신 — 입력 중 전체 재렌더로 포커스를 잃지 않게 */
@@ -422,7 +488,22 @@ function wireImport(){
 // ── 데이터 관리 ─────────────────────────────
 function openManage(){
   const s = DiaryStore.stats();
+  const trackRows = DiaryTracks.TRACKS.map(t => {
+    const days = (s.trackDays || {})[t.id] || 0;
+    const on = DiaryTracks.isOn(t.id);
+    return `<label class="mg-track${t.always ? ' fixed' : ''}">` +
+      `<input type="checkbox" ${on ? 'checked' : ''} ${t.always ? 'disabled' : ''} ` +
+        `onchange="toggleTrack('${t.id}', this.checked)">` +
+      `<span class="mg-track-ico">${t.icon}</span>` +
+      `<span class="mg-track-t"><b>${escapeHtml(t.name)}</b>` +
+        `<span class="mg-track-d">${t.always ? '항상 켜져 있어요' : escapeHtml(t.desc || '')}</span></span>` +
+      `<span class="mg-track-n">${days ? fmtNum(days) + '일' : ''}</span>` +
+    `</label>`;
+  }).join('');
   $('mg-body').innerHTML =
+    `<div class="mg-sec-t">기록할 것</div>` +
+    `<div class="mg-tracks">${trackRows}</div>` +
+    `<p class="mg-note">끄더라도 이미 남긴 기록은 지워지지 않고, 그 날짜에는 계속 보입니다.</p>` +
     `<div class="mg-stats">` +
       `<div><span>일기</span><b>${fmtNum(s.notes)}편</b></div>` +
       `<div><span>경로</span><b>${fmtNum(s.routes)}일</b></div>` +
@@ -440,9 +521,14 @@ async function wipeRoutes(){
   renderCalendar(); renderPanel(); closeManage();
   showToast(`🗑 경로 ${fmtNum(n)}일치를 지웠어요`);
 }
+async function toggleTrack(id, on){
+  await DiaryTracks.setOn(id, on);
+  renderCalendar(); renderPanel(); openManage();
+}
 window.openManage = openManage;
 window.closeManage = closeManage;
 window.wipeRoutes = wipeRoutes;
+window.toggleTrack = toggleTrack;
 
 // ── 로그아웃 ────────────────────────────────
 function openLogout(){ $('logout-modal').style.display = 'flex'; }

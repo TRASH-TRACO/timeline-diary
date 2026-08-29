@@ -55,6 +55,8 @@ const myRevs = new Map();          // monthKey → 내가 마지막으로 올린
 
 const colRef = () => collection(db, 'users', uid, 'diary');
 const docRef = key => doc(db, 'users', uid, 'diary', key);
+// 달 문서는 'YYYY-MM', 그 외(현재는 'settings')는 달이 아니다
+const isMonth = id => /^\d{4}-\d{2}$/.test(id);
 const newRev = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random());
 
 function deviceLabel(){
@@ -151,6 +153,19 @@ async function pushMonth(key){
 
 async function pushAllDirty(){
   for(const key of DiaryStore.dirtyKeys()) await pushMonth(key);
+  await pushSettings();
+}
+
+/** 설정 문서 — 달 문서와 나란히 산다 */
+async function pushSettings(){
+  if(!uid || !ready || !DiaryStore.settingsDirty()) return;
+  try{
+    const snap = DiaryStore.settingsSnapshot();
+    await setDoc(docRef('settings'), { ...snap, updatedAtMs: Date.now(), device: deviceLabel() });
+    await DiaryStore.markSettingsClean();
+  }catch(e){
+    console.warn('[sync] 설정 업로드 실패:', e.code || e.message);
+  }
 }
 
 // ── 최초 조정 ───────────────────────────────
@@ -167,15 +182,21 @@ async function reconcile(){
   }
 
   const remoteKeys = new Set();
+  let sawSettings = false;
   suppress++;
   try{
     for(const s of snaps.docs){
+      if(!isMonth(s.id)){
+        if(s.id === 'settings'){ sawSettings = true; await DiaryStore.applyRemoteSettings(s.data()); }
+        continue;
+      }
       const r = unpack(s);
       if(!r) continue;
       remoteKeys.add(s.id);
       await DiaryStore.applyRemote(s.id, { v: 1, days: r.days });
     }
   } finally { suppress--; }
+  if(!sawSettings) await DiaryStore.markSettingsDirty();
 
   ready = true;
 
@@ -184,6 +205,7 @@ async function reconcile(){
     if(!remoteKeys.has(key)) await DiaryStore.markDirty(key);
   }
   await pushAllDirty();
+  await pushSettings();
   setChip('동기화됨', 'ok');
   subscribe();
 }
@@ -195,6 +217,10 @@ function subscribe(){
     if(qs.metadata.hasPendingWrites) return;      // 방금 우리가 쓴 것
     qs.docChanges().forEach(async ch => {
       if(ch.type === 'removed') return;
+      if(!isMonth(ch.doc.id)){
+        if(ch.doc.id === 'settings') DiaryStore.applyRemoteSettings(ch.doc.data());
+        return;
+      }
       const r = unpack(ch.doc);
       if(!r) return;
       if(r.rev && r.rev === myRevs.get(ch.doc.id)) return;   // 이미 반영됨
@@ -268,6 +294,11 @@ window.DiarySync = {
     if(!uid || !ready || suppress > 0) return;
     clearTimeout(timers.get(key));
     timers.set(key, setTimeout(() => pushMonth(key), PUSH_DEBOUNCE_MS));
+  },
+  scheduleSettingsPush(){
+    if(!uid || !ready || suppress > 0) return;
+    clearTimeout(timers.get('__settings'));
+    timers.set('__settings', setTimeout(pushSettings, PUSH_DEBOUNCE_MS));
   },
   signOut(){ return sdkReady ? signOutFn(auth) : Promise.resolve(); },
   syncNow(){ return uid ? pushAllDirty() : Promise.resolve(); },
