@@ -54,6 +54,7 @@ setTimeout(function(){document.documentElement.classList.remove('booting');},200
         <span class="sync-user" id="sync-user"></span>
         <button class="icon-btn" id="theme-toggle" onclick="toggleTheme()" title="라이트/다크 전환" aria-label="라이트/다크 전환"></button>
         <button class="hdr-btn" onclick="openHelp()" title="타임라인 데이터 받는 법">도움말</button>
+        <button class="hdr-btn" onclick="openShare()" title="공개할 것만 골라 내보내기">공유</button>
         <button class="hdr-btn" onclick="openManage()" title="가져온 데이터 관리">데이터</button>
         <button class="hdr-btn" id="sync-chip" onclick="onSyncChipClick()" title="기기 간 동기화 — 로그인 상태에서 누르면 지금 동기화">로그인</button>
         <button class="hdr-btn" id="sync-logout" onclick="openLogout()" title="로그아웃" style="display:none;">로그아웃</button>
@@ -147,6 +148,53 @@ setTimeout(function(){document.documentElement.classList.remove('booting');},200
       </ol>
       <p class="help-note">아주 큰 <code>Records.json</code>(원시 위치 로그)은 브라우저가 감당하기 어려워 건너뜁니다.
         <code>Semantic Location History</code> 폴더의 월별 파일이나 기기에서 내보낸 <code>Timeline.json</code>을 쓰면 훨씬 빠르고 결과도 깔끔합니다.</p>
+    </div>
+  </div>
+</div>
+
+<!-- 공개본 만들기 -->
+<div class="modal" id="share-modal">
+  <div class="modal-box wide">
+    <div class="modal-hdr">
+      <h2>공개본 만들기</h2>
+      <button class="icon-btn" onclick="closeShare()" aria-label="닫기">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="sh-grid">
+        <div class="sh-form">
+          <div class="sh-sec">
+            <div class="sh-sec-t">기간</div>
+            <div class="sh-presets">
+              <button class="tf-chip" onclick="sharePreset('month')">이번 달</button>
+              <button class="tf-chip" onclick="sharePreset('30d')">최근 30일</button>
+              <button class="tf-chip" onclick="sharePreset('all')">전체</button>
+            </div>
+            <div class="sh-range">
+              <input type="date" id="sh-from" onchange="refreshShare()">
+              <span>~</span>
+              <input type="date" id="sh-to" onchange="refreshShare()">
+            </div>
+          </div>
+          <div class="sh-sec">
+            <div class="sh-sec-t">무엇을 담을까요</div>
+            <div id="sh-tracks"></div>
+            <label class="sh-note-opt">
+              <input type="checkbox" id="sh-note" onchange="refreshShare()">
+              <span>오늘의 일기도 함께</span>
+            </label>
+          </div>
+        </div>
+        <div class="sh-preview">
+          <div class="sh-sec-t">미리보기 — 이게 남들에게 보이는 전부입니다</div>
+          <div id="sh-warn"></div>
+          <div id="sh-stat" class="sh-stat"></div>
+          <div id="sh-sample" class="sh-sample"></div>
+        </div>
+      </div>
+      <div class="sh-foot">
+        <p class="sh-hint" id="sh-hint"></p>
+        <button class="btn pri" id="sh-export" onclick="exportShare()">JSON으로 내보내기</button>
+      </div>
     </div>
   </div>
 </div>

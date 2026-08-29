@@ -485,6 +485,191 @@ function wireImport(){
   }
 }
 
+// ══════════════════════════════════════════
+// 공개본 만들기
+// ══════════════════════════════════════════
+// 고른 것이 실제로 어떻게 나가는지를 같은 화면에서 보여준다. 미리보기는 요약 숫자만이
+// 아니라 걸러진 결과 자체를 그린다 — 집을 가렸다면 가려진 그림이 나와야 믿을 수 있다.
+let _shareSpec = null;
+
+function openShare(){
+  const span = DiaryStore.dateSpan();
+  if(!span.first){ showToast('아직 내보낼 기록이 없어요'); return; }
+  if(!_shareSpec){
+    const tracks = {};
+    DiaryTracks.TRACKS.forEach(t => {
+      const lv = DiaryTracks.defaultShareLevel(t);
+      if(lv) tracks[t.id] = lv.id;      // 기본은 언제나 민감하지 않은 쪽
+    });
+    _shareSpec = { from: span.first, to: span.last, note: false, tracks };
+  }
+  $('sh-from').value = _shareSpec.from;
+  $('sh-to').value   = _shareSpec.to;
+  $('sh-note').checked = !!_shareSpec.note;
+  $('sh-tracks').innerHTML = DiaryTracks.TRACKS.map(t => {
+    const levels = t.share || [];
+    if(!levels.length) return '';
+    const cur = _shareSpec.tracks[t.id] || '';
+    const opts = [`<option value="">담지 않음</option>`].concat(levels.map(l =>
+      `<option value="${l.id}"${cur === l.id ? ' selected' : ''}>${escapeHtml(l.name)}</option>`)).join('');
+    const lv = levels.find(l => l.id === cur);
+    return `<div class="sh-track">` +
+      `<span class="sh-track-ico">${t.icon}</span>` +
+      `<span class="sh-track-nm">${escapeHtml(t.name)}</span>` +
+      `<select class="sh-sel" data-track="${t.id}" onchange="setShareLevel('${t.id}', this.value)">${opts}</select>` +
+      `<div class="sh-track-d">${lv ? escapeHtml(lv.desc || lv.name) : '이 트랙은 내보내지 않습니다'}</div>` +
+    `</div>`;
+  }).join('');
+  $('share-modal').style.display = 'flex';
+  refreshShare();
+}
+function closeShare(){ $('share-modal').style.display = 'none'; }
+function setShareLevel(id, level){
+  _shareSpec.tracks[id] = level;
+  openShare();                          // 설명 줄까지 다시 그린다
+}
+function sharePreset(kind){
+  const span = DiaryStore.dateSpan();
+  const t = new Date();
+  if(kind === 'month'){
+    _shareSpec.from = `${t.getFullYear()}-${pad2(t.getMonth() + 1)}-01`;
+    _shareSpec.to = todayStr();
+  }else if(kind === '30d'){
+    const d = new Date(t.getTime() - 29 * 86400000);
+    _shareSpec.from = ymd(d); _shareSpec.to = todayStr();
+  }else{
+    _shareSpec.from = span.first; _shareSpec.to = span.last;
+  }
+  $('sh-from').value = _shareSpec.from;
+  $('sh-to').value = _shareSpec.to;
+  refreshShare();
+}
+
+/** 지금 설정으로 걸러낸 결과 */
+function shareProjection(){
+  _shareSpec.from = $('sh-from').value || _shareSpec.from;
+  _shareSpec.to   = $('sh-to').value   || _shareSpec.to;
+  _shareSpec.note = $('sh-note').checked;
+  const spec = { note: _shareSpec.note, tracks: {} };
+  for(const id in _shareSpec.tracks) if(_shareSpec.tracks[id]) spec.tracks[id] = _shareSpec.tracks[id];
+  const src = DiaryStore.daysInRange(_shareSpec.from, _shareSpec.to);
+  const days = {};
+  for(const ds of Object.keys(src).sort()){
+    const pub = DiaryShare.projectDay(src[ds], spec);
+    if(pub) days[ds] = pub;
+  }
+  return { spec, days, stat: DiaryShare.previewShare(src, spec) };
+}
+
+function refreshShare(){
+  const { days, stat } = shareProjection();
+  const dsList = Object.keys(days);
+
+  // 민감한 수준을 골랐으면 분명히 알린다
+  const warns = [];
+  for(const id in _shareSpec.tracks){
+    const t = DiaryTracks.trackById(id);
+    const lv = t && (t.share || []).find(l => l.id === _shareSpec.tracks[id]);
+    if(lv && lv.sensitive) warns.push(`<b>${escapeHtml(t.name)} · ${escapeHtml(lv.name)}</b> — ${escapeHtml(lv.desc || '민감한 내용이 함께 나갑니다')}`);
+  }
+  $('sh-warn').innerHTML = warns.length
+    ? `<div class="sh-warn">⚠️ ${warns.join('<br>')}</div>` : '';
+
+  if(!dsList.length){
+    $('sh-stat').innerHTML = '<span class="dim">고른 조건으로는 나갈 게 없어요</span>';
+    $('sh-sample').innerHTML = '';
+    $('sh-export').disabled = true;
+    $('sh-hint').textContent = '';
+    return;
+  }
+  $('sh-export').disabled = false;
+  const bits = [`<span><b>${fmtNum(stat.days)}</b>일</span>`];
+  for(const id in stat.tracks){
+    const t = DiaryTracks.trackById(id);
+    bits.push(`<span>${t ? t.icon : ''} <b>${fmtNum(stat.tracks[id])}</b>일</span>`);
+  }
+  if(stat.notes)  bits.push(`<span>일기 <b>${fmtNum(stat.notes)}</b>편</span>`);
+  if(stat.photos) bits.push(`<span>사진 <b>${fmtNum(stat.photos)}</b>장</span>`);
+  bits.push(`<span class="dim">${stat.first} ~ ${stat.last}</span>`);
+  $('sh-stat').innerHTML = bits.join('');
+  $('sh-hint').textContent = stat.photos
+    ? `사진 ${fmtNum(stat.photos)}장은 id만 들어갑니다. 파일은 링크로 공개할 때 함께 나갑니다.`
+    : '';
+
+  // 표본 하루 — 가장 내용이 많은 날을 고른다. 아무 날이나 잡으면 정작 확인하고 싶은
+  // 항목(일기·사진)이 빠진 날이 걸려서 미리보기 구실을 못 한다.
+  const score = ds => {
+    const pub = days[ds];
+    let n = pub.note ? 2 : 0;
+    for(const id in (pub.t || {})){
+      n += 2;
+      const v = pub.t[id];
+      if(v.p) n += 3;                                  // 그려지는 경로가 제일 볼 만하다
+      if(Array.isArray(v.photos)) n += v.photos.length;
+    }
+    return n;
+  };
+  const pick = dsList.reduce((a, ds) => (score(ds) > score(a) ? ds : a), dsList[0]);
+  renderShareSample(pick, days[pick]);
+}
+
+function renderShareSample(ds, pub){
+  const box = $('sh-sample');
+  const d = new Date(ds + 'T00:00:00');
+  let html = `<div class="sh-sample-t">${d.getMonth() + 1}월 ${d.getDate()}일에 나가는 내용</div>`;
+  box.innerHTML = html + `<div id="sh-sample-body"></div>`;
+  const body = $('sh-sample-body');
+
+  const r = pub.t && pub.t.route;
+  if(r && r.p){
+    const el = document.createElement('div');
+    body.appendChild(el);
+    DiaryViz.renderRoute(el, r, ds);
+  }else if(r && r.summary){
+    body.innerHTML += `<div class="sh-row"><span>이동</span><b>${fmtDist(r.d || 0)}</b></div>` +
+      `<div class="sh-row"><span>기록 구간</span><b>${escapeHtml(hmAt(r.s, r.tz))} – ${escapeHtml(hmAt(r.e, r.tz))}</b></div>` +
+      `<div class="sh-row"><span>머문 곳</span><b>${fmtNum(r.places || 0)}곳</b></div>` +
+      `<div class="sh-row dim"><span>좌표</span><b>나가지 않음</b></div>`;
+  }
+  for(const id in (pub.t || {})){
+    if(id === 'route') continue;
+    const t = DiaryTracks.trackById(id);
+    const v = pub.t[id];
+    for(const k in v){
+      const f = (t.fields || []).find(x => x.key === k);
+      const label = f ? f.label : k;
+      let val = v[k];
+      if(Array.isArray(val)) val = `사진 ${val.length}장`;
+      else if(f && f.unit) val = val + ' ' + f.unit;
+      body.innerHTML += `<div class="sh-row"><span>${t.icon} ${escapeHtml(label)}</span><b>${escapeHtml(String(val))}</b></div>`;
+    }
+  }
+  if(pub.note) body.innerHTML += `<div class="sh-row note"><span>✎ 일기</span><b>${escapeHtml(pub.note)}</b></div>`;
+}
+
+function exportShare(){
+  const { spec, days, stat } = shareProjection();
+  const blob = new Blob([JSON.stringify({
+    v: 1, kind: 'timeline-diary-share',
+    from: _shareSpec.from, to: _shareSpec.to,
+    madeAt: new Date().toISOString(),
+    spec, days,
+  }, null, 1)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `diary-${_shareSpec.from}_${_shareSpec.to}.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  showToast(`📤 ${fmtNum(stat.days)}일치를 내보냈어요`);
+}
+
+window.openShare = openShare;
+window.closeShare = closeShare;
+window.setShareLevel = setShareLevel;
+window.sharePreset = sharePreset;
+window.refreshShare = refreshShare;
+window.exportShare = exportShare;
+
 // ── 데이터 관리 ─────────────────────────────
 async function openManage(){
   const s = DiaryStore.stats();
@@ -606,7 +791,7 @@ async function init(){
 
   document.addEventListener('keydown', e => {
     if(e.key !== 'Escape') return;
-    ['import-modal', 'manage-modal', 'help-modal', 'logout-modal'].forEach(id => {
+    ['import-modal', 'manage-modal', 'help-modal', 'logout-modal', 'share-modal'].forEach(id => {
       const m = $(id);
       if(m && m.style.display === 'flex') m.style.display = 'none';
     });

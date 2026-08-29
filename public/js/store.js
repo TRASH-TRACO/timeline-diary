@@ -314,6 +314,29 @@ async function applyRemote(key, remote){
   return changed;
 }
 
+/** 기간 안의 하루 기록들 { 'YYYY-MM-DD': day } */
+function daysInRange(from, to){
+  const out = {};
+  for(const key of monthKeys()){
+    if(key < from.slice(0, 7) || key > to.slice(0, 7)) continue;
+    const days = _months.get(key).days;
+    for(const ds in days) if(ds >= from && ds <= to) out[ds] = days[ds];
+  }
+  return out;
+}
+
+/** 기록이 있는 가장 이른 날 / 늦은 날 */
+function dateSpan(){
+  let first = null, last = null;
+  for(const key of monthKeys()){
+    for(const ds in _months.get(key).days){
+      if(!first || ds < first) first = ds;
+      if(!last  || ds > last)  last = ds;
+    }
+  }
+  return { first, last };
+}
+
 // ── 통계 ────────────────────────────────────
 function stats(){
   let notes = 0, routes = 0, first = null, last = null, distM = 0;
@@ -339,6 +362,7 @@ function stats(){
 window.DiaryStore = {
   NOTE_MAX, loadLocal, onChange, emit, migrateRoutes,
   getTrack, setTrack, daysTracks,
+  daysInRange, dateSpan,
   getSetting, setSetting, settingsSnapshot, settingsDirty,
   markSettingsClean, markSettingsDirty, applyRemoteSettings,
   getMonth, getDay, monthKeys,
