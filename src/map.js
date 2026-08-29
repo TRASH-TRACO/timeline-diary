@@ -119,9 +119,18 @@ async function open(el, enc, ds){
   const latlngs = pts.map(q => [q[0], q[1]]);
   map.fitBounds(latlngs, 28);
 
-  // 아직 안 지나간 길은 옅게 깔아 두고, 지나간 만큼 진하게 덧그린다
-  map.line(latlngs, { cls: 'mp-base', color: '#94a3b8', weight: 3, opacity: 0.45 });
+  // 아직 안 지나간 길은 옅게 깔아 두고, 지나간 만큼 진하게 덧그린다.
+  // 끊긴 자리(집 주변을 도려낸 곳)는 이어 그리지 않는다 — 이어 버리면
+  // 잘라낸 지점을 가로지르는 직선이 생겨서 가린 의미가 없어진다.
+  DiaryTimeline.segmentsOf(pts, r.breaks).forEach(seg =>
+    map.line(seg.map(q => [q[0], q[1]]), { cls: 'mp-base', color: '#94a3b8', weight: 3, opacity: 0.45 }));
   const trail = map.line([latlngs[0]], { cls: 'mp-trail', color: '#10b981', weight: 5, opacity: 0.95 });
+  /** 지금 위치까지 지나온 길 — 끊긴 자리 이후만 (그 앞은 이미 깔린 밑선으로 보인다) */
+  function trailPath(i, ll){
+    let from = 0;
+    if(r.breaks && r.breaks.size) r.breaks.forEach(b => { if(b <= i && b > from) from = b; });
+    return latlngs.slice(from, i + 1).concat([ll]);
+  }
 
   // 머문 곳
   (r.visits || []).forEach(v => {
@@ -208,7 +217,8 @@ async function open(el, enc, ds){
     const s = at(p);
     const ll = [s.lat, s.lng];
     dot.setPosition(ll);
-    trail.setPath(latlngs.slice(0, (s.i || 0) + 1).concat([ll]));
+    // 지나온 길도 끊김을 지킨다. 마지막으로 이어진 구간만 그린다.
+    trail.setPath(trailPath(s.i || 0, ll));
     timeEl.textContent = hmAt(s.ms, tz);
     distEl.textContent = fmtDist(s.dist);
     scrub.value = String(Math.round(p * 1000));

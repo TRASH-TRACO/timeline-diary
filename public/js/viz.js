@@ -23,6 +23,14 @@ function rampAt(stops, t){
   return `rgb(${Math.round(a[0] + (b[0] - a[0]) * f)},${Math.round(a[1] + (b[1] - a[1]) * f)},${Math.round(a[2] + (b[2] - a[2]) * f)})`;
 }
 
+/** 원본 인덱스 기준 끊김을 잘라낸 구간의 인덱스로 옮긴다 */
+function shiftBreaks(breaks, from){
+  if(!breaks || !breaks.size) return null;
+  const out = new Set();
+  breaks.forEach(i => { if(i > from) out.add(i - from); });
+  return out.size ? out : null;
+}
+
 const MIN_SPAN_DEG = 0.0006;   // 하루 종일 한자리에 있었던 날도 지도가 성립하도록
 
 /**
@@ -53,9 +61,15 @@ function projector(points, x0, y0, w, h){
 }
 
 const rnd = n => Math.round(n * 10) / 10;
-function polyD(pts, proj){
+/**
+ * 점들을 path의 d로. breaks가 있으면 끊긴 자리에서 붓을 뗀다 —
+ * 이어 그리면 집 주변을 도려낸 자리를 가로지르는 직선이 생겨 가린 의미가 없어진다.
+ */
+function polyD(pts, proj, breaks){
   let d = '';
-  pts.forEach((p, i) => { const [x, y] = proj(p); d += (i ? 'L' : 'M') + rnd(x) + ' ' + rnd(y); });
+  DiaryTimeline.segmentsOf(pts, breaks).forEach(seg => {
+    seg.forEach((p, i) => { const [x, y] = proj(p); d += (i ? 'L' : 'M') + rnd(x) + ' ' + rnd(y); });
+  });
   return d;
 }
 
@@ -74,10 +88,20 @@ function thumbSVG(enc, size){
   if(!r) return '';
   const S = size || 46;
   let pts = r.points;
+  let breaks = r.breaks;
   if(pts.length > 44){                       // 셀에선 40여 점이면 형태가 다 보인다
-    const step = pts.length / 44, thin = [];
-    for(let i = 0; i < 44; i++) thin.push(pts[Math.floor(i * step)]);
-    thin.push(pts[pts.length - 1]);
+    // 솎아내면 인덱스가 밀린다. 끊김을 원본 인덱스 그대로 쓰면 엉뚱한 자리에서
+    // 끊기고, 정작 가린 자리는 직선으로 이어져 집이 도로 드러난다.
+    const step = pts.length / 44, thin = [], from = [];
+    for(let i = 0; i < 44; i++){ const o = Math.floor(i * step); thin.push(pts[o]); from.push(o); }
+    thin.push(pts[pts.length - 1]); from.push(pts.length - 1);
+    if(breaks && breaks.size){
+      const nb = new Set();
+      for(let k = 1; k < from.length; k++){
+        for(let o = from[k - 1] + 1; o <= from[k]; o++) if(breaks.has(o)){ nb.add(k); break; }
+      }
+      breaks = nb;
+    }
     pts = thin;
   }
   const proj = projector(pts, 5, 5, S - 10, S - 10);
@@ -85,7 +109,7 @@ function thumbSVG(enc, size){
     const [x, y] = proj(pts[0]);
     return `<svg class="thumb" viewBox="0 0 ${S} ${S}" aria-hidden="true"><circle cx="${rnd(x)}" cy="${rnd(y)}" r="3"/></svg>`;
   }
-  return `<svg class="thumb" viewBox="0 0 ${S} ${S}" aria-hidden="true"><path d="${polyD(pts, proj)}" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  return `<svg class="thumb" viewBox="0 0 ${S} ${S}" aria-hidden="true"><path d="${polyD(pts, proj, breaks)}" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 }
 
 // ── 축척 막대 ───────────────────────────────
@@ -117,20 +141,20 @@ function renderRoute(el, enc, ds){
   // 1) 시간대별로 묶어 색을 입힌다 — 점마다 선을 그리지 않고 구간 단위로 묶는다
   const B = Math.max(4, Math.min(24, Math.floor(pts.length / 3) || 4));
   const segs = [];
-  let cur = [pts[0]], curB = 0;
+  let cur = [pts[0]], curB = 0, from = 0;
   for(let i = 1; i < pts.length; i++){
     const b = Math.min(B - 1, Math.floor((pts[i][2] - t0) / span * B));
-    if(b !== curB){ cur.push(pts[i]); segs.push({ b: curB, pts: cur }); cur = [pts[i]]; curB = b; }
+    if(b !== curB){ cur.push(pts[i]); segs.push({ b: curB, pts: cur, from }); cur = [pts[i]]; curB = b; from = i; }
     else cur.push(pts[i]);
   }
-  segs.push({ b: curB, pts: cur });
+  segs.push({ b: curB, pts: cur, from });
 
   let paths = '';
   // 바탕에 두꺼운 선을 한 번 깔아 배경 위에서 경로가 끊겨 보이지 않게 한다
-  if(pts.length > 1) paths += `<path class="rv-halo" d="${polyD(pts, proj)}" fill="none"/>`;
+  if(pts.length > 1) paths += `<path class="rv-halo" d="${polyD(pts, proj, r.breaks)}" fill="none"/>`;
   segs.forEach(sg => {
     if(sg.pts.length < 2) return;
-    paths += `<path d="${polyD(sg.pts, proj)}" fill="none" stroke="${rampAt(stops, B > 1 ? sg.b / (B - 1) : 1)}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>`;
+    paths += `<path d="${polyD(sg.pts, proj, r.breaks && shiftBreaks(r.breaks, sg.from))}" fill="none" stroke="${rampAt(stops, B > 1 ? sg.b / (B - 1) : 1)}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>`;
   });
 
   // 2) 축척 막대 자리를 먼저 잡아둔다 — 라벨이 이 위에 얹히지 않도록

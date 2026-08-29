@@ -303,19 +303,27 @@ function buildRoute(dayPts){
 //    문자열이면 색인 항목이 1개다.
 //  · Firestore는 배열 안의 배열을 아예 못 담는다.
 //  · 덤으로 용량도 준다(대괄호·공백이 사라진다).
-function encodeRoute(r, off){
+function encodePoints(points){
   const out = [];
   let la = 0, ln = 0, t = 0;
-  for(const pt of r.points){
+  for(const pt of points){
     const a = Math.round(pt[0] * 1e5), o = Math.round(pt[1] * 1e5), sec = Math.round(pt[2] / 1000);
     out.push(a - la, o - ln, sec - t);
     la = a; ln = o; t = sec;
   }
-  return { v: 2, p: out.join(','), d: Math.round(r.dist), s: r.s, e: r.e, tz: off == null ? null : off };
+  return out.join(',');
+}
+function encodeRoute(r, off){
+  return { v: 2, p: encodePoints(r.points), d: Math.round(r.dist), s: r.s, e: r.e,
+           tz: off == null ? null : off };
 }
 /**
- * 인코딩된 경로 → {points:[[lat,lng,ms]], dist, s, e, tz}
+ * 인코딩된 경로 → {points:[[lat,lng,ms]], dist, s, e, tz, breaks}
  * v1(숫자 배열)과 v2(문자열) 둘 다 읽는다 — 예전에 저장된 것도 그대로 열린다.
+ *
+ * breaks는 "이 점 앞에서 길이 끊겼다"는 인덱스 집합이다. 집 주변을 가린 경로처럼
+ * 중간이 도려내진 경우에 쓴다. 이걸 무시하고 이어 그리면 잘라낸 자리를 가로지르는
+ * 직선이 생겨서, 가린 지점이 도로 드러난다.
  */
 function decodeRoute(enc){
   if(!enc) return null;
@@ -329,7 +337,8 @@ function decodeRoute(enc){
   }
   if(!points.length) return null;
   return { points, dist: enc.d || 0, s: enc.s || points[0][2], e: enc.e || points[points.length - 1][2],
-           tz: enc.tz == null ? null : enc.tz, visits: enc.v2 || [], moves: enc.m || [] };
+           tz: enc.tz == null ? null : enc.tz, visits: enc.v2 || [], moves: enc.m || [],
+           breaks: new Set(Array.isArray(enc.b) ? enc.b : []) };
 }
 
 /**
@@ -385,4 +394,21 @@ function accToDays(acc){
   return out;
 }
 
-window.DiaryTimeline = { newAcc, ingest, accToDays, decodeRoute, parseLatLng };
+/**
+ * 끊김을 반영해 이어진 구간들로 쪼갠다.
+ * 끊긴 자리를 가로질러 그리면 가린 지점이 직선으로 드러나므로, 그리는 쪽은
+ * 반드시 이걸 거쳐야 한다.
+ */
+function segmentsOf(points, breaks){
+  if(!breaks || !breaks.size) return [points];
+  const out = [];
+  let cur = [];
+  points.forEach((p, i) => {
+    if(i && breaks.has(i)){ if(cur.length) out.push(cur); cur = []; }
+    cur.push(p);
+  });
+  if(cur.length) out.push(cur);
+  return out.filter(s => s.length);
+}
+
+window.DiaryTimeline = { newAcc, ingest, accToDays, decodeRoute, encodePoints, segmentsOf, parseLatLng, haversine };

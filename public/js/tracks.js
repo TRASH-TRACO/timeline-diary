@@ -22,6 +22,18 @@ const TRACKS = [
     view: 'route',              // 전용 화면 (지도 재생기)
     /** 캘린더 셀에 무엇을 보일지 */
     cell: v => (v ? { thumb: v, sub: fmtDist(v.d || 0) } : null),
+    /**
+     * 공개 수준. 궤적은 집과 직장 주소를 그대로 드러내므로 — 이 앱은 심지어
+     * '시작 00:10 · 집'이라고 라벨까지 붙인다 — 기본값을 '집 주변 가리기'로 둔다.
+     */
+    share: [
+      { id: 'summary', name: '요약만', desc: '이동 거리·시간만, 좌표는 안 나감',
+        project: v => DiaryShare.routeSummary(v) },
+      { id: 'hide-home', name: '집 주변 가리기', desc: '집·직장 반경 500m를 도려낸 궤적',
+        recommended: true, project: v => DiaryShare.redactRoute(v) },
+      { id: 'full', name: '궤적 전체', desc: '집 위치가 그대로 드러납니다',
+        sensitive: true, project: v => v },
+    ],
   },
   {
     id: 'isotretinoin',
@@ -37,6 +49,12 @@ const TRACKS = [
         placeholder: '피부 상태나 부작용을 짧게' },
     ],
     cell: v => (v && v.dose != null ? { badge: v.dose + 'mg' } : null),
+    share: [
+      { id: 'dose',  name: '복용량만',      fields: ['dose'], recommended: true },
+      { id: 'note',  name: '복용량 + 메모', fields: ['dose', 'note'] },
+      { id: 'all',   name: '사진까지',      fields: ['dose', 'note', 'photos'], sensitive: true,
+        desc: '얼굴·피부 사진이 함께 나갑니다' },
+    ],
     /**
      * 월 요약. entries: [{ds, v}] — 날짜순.
      * 누적 복용량은 이 약을 먹는 동안 사람들이 실제로 세는 숫자라 합계를 보여준다.
@@ -248,4 +266,10 @@ function openShot(id){
   });
 }
 
-window.DiaryTracks = { TRACKS, trackById, isOn, setOn, tracksFor, fieldsHtml, wireFields, openShot, SETTING_KEY };
+/** 트랙의 기본 공개 수준 (추천으로 표시된 것, 없으면 가장 좁은 것) */
+function defaultShareLevel(track){
+  const ls = track.share || [];
+  return (ls.find(l => l.recommended) || ls[0] || null);
+}
+
+window.DiaryTracks = { TRACKS, trackById, defaultShareLevel, isOn, setOn, tracksFor, fieldsHtml, wireFields, openShot, SETTING_KEY };
