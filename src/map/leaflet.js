@@ -77,6 +77,7 @@ export async function create(el, opts){
       }).addTo(map);
     },
 
+    onZoomStart(fn){ map.on('zoomstart', fn); },
     onZoomEnd(fn){ map.on('zoomend', fn); },
     /**
      * 사용자가 직접 지도를 만졌을 때. movestart/zoomstart로 잡으면 우리 카메라가

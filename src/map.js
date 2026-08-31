@@ -148,6 +148,9 @@ async function open(el, enc, ds){
   // ── 상태 ──
   let p = 0, playing = false, speedIdx = 0, follow = true, raf = null, last = 0;
   let lastCam = 0, lastZoomAt = 0, settle = null, initTimer = null, destroyed = false;
+  // 지도가 확대/축소 애니메이션 중인가.
+  // 그 동안에는 지도 위 요소(경로·마커)를 건드리면 안 된다 — 아래 render() 참고.
+  let zooming = false;
   // 카메라가 움직이는 중임을 "언제까지"로 관리한다. moveend/zoomend로 플래그를
   // 내리면 직전 동작의 moveend가 새 비행 직후에 도착해 플래그를 지워버리고,
   // 그 틈에 panTo가 끼어들어 비행을 중간에서 잘라 먹는다(z15→z8이 z9에서 끊겼다).
@@ -216,12 +219,22 @@ async function open(el, enc, ds){
     if(destroyed) return;
     const s = at(p);
     const ll = [s.lat, s.lng];
-    dot.setPosition(ll);
-    // 지나온 길도 끊김을 지킨다. 마지막으로 이어진 구간만 그린다.
-    trail.setPath(trailPath(s.i || 0, ll));
     timeEl.textContent = hmAt(s.ms, tz);
     distEl.textContent = fmtDist(s.dist);
     scrub.value = String(Math.round(p * 1000));
+
+    // 확대·축소가 도는 동안에는 지도 위 요소를 다시 그리지 않는다.
+    //
+    // 지도는 확대할 때 그리기 컨테이너에 변환을 걸어 그 안의 경로를 통째로 키운다.
+    // 그래서 손대지 않은 밑선은 지도와 함께 매끄럽게 커진다. 그런데 그 사이에
+    // 경로를 다시 쓰면 좌표가 "변환 이전" 기준으로 계산되어, 걸려 있는 변환과
+    // 어긋나 지도에서 떨어져 나온다 — 지도만 확대되고 경로는 안 따라오는 것처럼 보인다.
+    // (재보면 확대 한 번에 밑선은 2번, 다시 쓰던 경로는 74번 갱신됐다)
+    // 확대가 끝나면 onZoomEnd에서 한 번 맞춘다.
+    if(!zooming){
+      dot.setPosition(ll);
+      trail.setPath(trailPath(s.i || 0, ll));   // 끊김을 지켜 마지막 이어진 구간만
+    }
     if(opts && opts.camera) moveCamera(s, opts.force);
   }
 
@@ -238,9 +251,15 @@ async function open(el, enc, ds){
     map.stop();                       // 날아가던 중이면 그 자리에서 멈춰 사용자에게 넘긴다
     followBtn.classList.remove('on');
   }
+  map.onZoomStart(() => { zooming = true; });
   // 확대가 끝나는 순간 지도가 소수 배율을 정수로 스냅하면서 투영이 바뀐다.
   // 다음 프레임을 기다리면 그 한 프레임이 화면에서 168px 튄다. 여기서 바로 잡는다.
-  map.onZoomEnd(() => { if(follow && !destroyed) map.panTo([at(p).lat, at(p).lng]); });
+  map.onZoomEnd(() => {
+    zooming = false;
+    if(destroyed) return;
+    if(follow) map.panTo([at(p).lat, at(p).lng]);
+    render();                       // 확대 중 미뤄둔 경로·마커를 여기서 맞춘다
+  });
   map.onUserGesture(userTookOver);
 
   function tick(now){

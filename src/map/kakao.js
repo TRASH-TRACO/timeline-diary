@@ -123,6 +123,7 @@ export async function create(el, opts){
     // 그대로 쓰면 두 번 밀린다. 카카오 전용 클래스를 따로 둔다.
     label(a, html, cls){ overlay(a, html, 'mp-kpin ' + cls, 4); },
 
+    onZoomStart(fn){ kakao.maps.event.addListener(map, 'zoom_start', fn); },
     onZoomEnd(fn){ kakao.maps.event.addListener(map, 'zoom_changed', fn); },
     onUserGesture(fn){
       kakao.maps.event.addListener(map, 'dragstart', fn);
