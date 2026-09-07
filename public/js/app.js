@@ -326,6 +326,18 @@ function renderVisitList(el, enc){
   el.appendChild(box);
 }
 
+/**
+ * 패널 안에서 뭔가 쓰고 있나. 쓰는 중에 패널을 다시 그리면 입력칸이 통째로
+ * 새로 만들어져 커서가 빠지고, 조합 중이던 한글은 씹힌다.
+ */
+function isEditingPanel(){
+  const el = document.activeElement;
+  if(!el) return false;
+  if(!el.isContentEditable && el.tagName !== 'TEXTAREA' && el.tagName !== 'INPUT') return false;
+  const panel = $('panel');
+  return !!(panel && panel.contains(el));
+}
+
 /** 트랙 배지만 즉석 갱신 — 입력 중 전체 재렌더로 포커스를 잃지 않게 */
 function updateCellBadges(ds){
   const cell = document.querySelector('.cal-cell[data-ds="' + ds + '"]');
@@ -781,12 +793,13 @@ async function init(){
   applyEntryGate();
   refreshLocalNote();
 
-  // 동기화로 데이터가 들어오면 화면을 맞춘다 (입력 중인 일기는 건드리지 않는다)
+  // 동기화로 데이터가 들어오면 화면을 맞춘다 (입력 중인 칸은 건드리지 않는다)
   DiaryStore.onChange(what => {
-    if(what === 'note') return;
+    // 내가 방금 친 글자가 저장된 것뿐이다. 화면은 이미 맞고, 달력·요약은
+    // 저장한 쪽에서 필요한 부분만 갱신한다.
+    if(what === 'note' || what === 'track') return;
     renderCalendar();
-    const ta = $('note-input');
-    if(!ta || document.activeElement !== ta) renderPanel();
+    if(!isEditingPanel()) renderPanel();
   });
 
   document.addEventListener('keydown', e => {

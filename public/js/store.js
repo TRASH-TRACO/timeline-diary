@@ -181,7 +181,11 @@ async function setTrack(ds, trackId, value){
   const day = m.days[ds] || (m.days[ds] = {});
   const t = day.t || (day.t = {});
   t[trackId] = { v: value == null ? null : value, at: Date.now() };
-  await touch(key);
+  // 이 저장은 대개 사용자가 폼에 입력하는 도중에 일어난다. 'data'로 알리면 화면이
+  // 통째로 다시 그려져 쓰고 있던 칸에서 커서가 빠진다 — 일기(note)와 같은 이유로
+  // 별도 신호를 준다. 화면 갱신은 부른 쪽이 필요한 부분만 한다.
+  await touch(key, { silent: true });
+  emit('track');
 }
 
 // ── 쓰기 ────────────────────────────────────
