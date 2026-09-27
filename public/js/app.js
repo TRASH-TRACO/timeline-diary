@@ -69,6 +69,10 @@ function goToday(){
 window.shiftMonth = shiftMonth;
 window.goToday = goToday;
 
+/** 캘린더 셀에 배지를 그리는 트랙들 (경로는 썸네일로 따로 그린다) */
+const cellTracks = () =>
+  DiaryTracks.all().filter(t => t.id !== 'route' && typeof t.cell === 'function');
+
 function renderCalendar(){
   $('cal-title').textContent = calYear + '년 ' + (calMonth + 1) + '월';
   const grid = $('cal-grid');
@@ -83,6 +87,7 @@ function renderCalendar(){
   const startDow = new Date(calYear, calMonth, 1).getDay();
   const days = new Date(calYear, calMonth + 1, 0).getDate();
   const today = todayStr();
+  const badgeTracks = cellTracks();
   for(let i = 0; i < startDow; i++){
     const c = document.createElement('div');
     c.className = 'cal-cell empty';
@@ -126,8 +131,7 @@ function renderCalendar(){
       cell.appendChild(dist);
     }
     // 경로 말고 다른 트랙 기록은 작은 배지로 (예: 20mg)
-    const badges = DiaryTracks.TRACKS
-      .filter(t => t.id !== 'route' && typeof t.cell === 'function')
+    const badges = badgeTracks
       .map(t => t.cell(DiaryStore.getTrack(ds, t.id)))
       .filter(c => c && c.badge);
     if(badges.length){
@@ -152,13 +156,13 @@ function renderMonthSummary(){
   const m = DiaryStore.getMonth(key, false);
   let routes = 0, notes = 0, dist = 0;
   const byTrack = {};
+  const sumTracks = DiaryTracks.all().filter(t => t.id !== 'route' && typeof t.summary === 'function');
   if(m) for(const ds of Object.keys(m.days).sort()){
     const d = m.days[ds];
     const rt = d.t && d.t.route && d.t.route.v;
     if(rt){ routes++; dist += rt.d || 0; }
     if(d.note) notes++;
-    for(const t of DiaryTracks.TRACKS){
-      if(t.id === 'route' || typeof t.summary !== 'function') continue;
+    for(const t of sumTracks){
       const v = d.t && d.t[t.id] && d.t[t.id].v;
       if(v) (byTrack[t.id] || (byTrack[t.id] = [])).push({ ds, v });
     }
@@ -342,8 +346,7 @@ function isEditingPanel(){
 function updateCellBadges(ds){
   const cell = document.querySelector('.cal-cell[data-ds="' + ds + '"]');
   if(!cell) return;
-  const badges = DiaryTracks.TRACKS
-    .filter(t => t.id !== 'route' && typeof t.cell === 'function')
+  const badges = cellTracks()
     .map(t => t.cell(DiaryStore.getTrack(ds, t.id)))
     .filter(c => c && c.badge);
   let row = cell.querySelector('.cal-badges');
@@ -509,7 +512,7 @@ function openShare(){
   if(!span.first){ showToast('아직 내보낼 기록이 없어요'); return; }
   if(!_shareSpec){
     const tracks = {};
-    DiaryTracks.TRACKS.forEach(t => {
+    DiaryTracks.all().forEach(t => {
       const lv = DiaryTracks.defaultShareLevel(t);
       if(lv) tracks[t.id] = lv.id;      // 기본은 언제나 민감하지 않은 쪽
     });
@@ -518,7 +521,7 @@ function openShare(){
   $('sh-from').value = _shareSpec.from;
   $('sh-to').value   = _shareSpec.to;
   $('sh-note').checked = !!_shareSpec.note;
-  $('sh-tracks').innerHTML = DiaryTracks.TRACKS.map(t => {
+  $('sh-tracks').innerHTML = DiaryTracks.all().map(t => {
     const levels = t.share || [];
     if(!levels.length) return '';
     const cur = _shareSpec.tracks[t.id] || '';
@@ -650,10 +653,8 @@ function renderShareSample(ds, pub){
     for(const k in v){
       const f = (t.fields || []).find(x => x.key === k);
       const label = f ? f.label : k;
-      let val = v[k];
-      if(Array.isArray(val)) val = `사진 ${val.length}장`;
-      else if(f && f.unit) val = val + ' ' + f.unit;
-      body.innerHTML += `<div class="sh-row"><span>${t.icon} ${escapeHtml(label)}</span><b>${escapeHtml(String(val))}</b></div>`;
+      body.innerHTML += `<div class="sh-row"><span>${t.icon} ${escapeHtml(label)}</span>` +
+        `<b>${escapeHtml(DiaryTracks.fieldText(f, v[k]))}</b></div>`;
     }
   }
   if(pub.note) body.innerHTML += `<div class="sh-row note"><span>✎ 일기</span><b>${escapeHtml(pub.note)}</b></div>`;
@@ -683,24 +684,112 @@ window.refreshShare = refreshShare;
 window.exportShare = exportShare;
 
 // ── 데이터 관리 ─────────────────────────────
+/**
+ * 약 추가 폼. 이소티논만 미리 적어두고 끝내면 다른 약을 먹는 사람은 쓸 데가 없다.
+ * 이름·단위·자주 먹는 양만 받으면 나머지(폼·배지·월 요약·공개 수준)는
+ * 미리 적어둔 트랙과 똑같이 만들어진다.
+ */
+function medFormHtml(){
+  return `<div class="mg-sec-t">약 추가</div>` +
+    `<div class="mg-med">` +
+      `<div class="mg-med-row">` +
+        `<input id="med-icon" class="mg-med-ico" value="💊" maxlength="2" aria-label="아이콘">` +
+        `<input id="med-name" class="mg-med-nm" maxlength="20" placeholder="약 이름 (예: 유산균)">` +
+      `</div>` +
+      `<div class="mg-med-row">` +
+        `<input id="med-unit" class="mg-med-u" list="med-units" maxlength="6" value="mg" ` +
+          `placeholder="단위" aria-label="단위">` +
+        `<datalist id="med-units">` +
+          ['mg', 'g', '정', '캡슐', 'ml', 'IU'].map(u => `<option value="${u}">`).join('') +
+        `</datalist>` +
+        `<input id="med-quick" class="mg-med-q" maxlength="40" placeholder="자주 먹는 양 (예: 0, 1, 2)" ` +
+          `aria-label="자주 먹는 양">` +
+        `<button class="btn pri" onclick="onAddMed()">추가</button>` +
+      `</div>` +
+      `<div class="mg-med-msg" id="med-msg"></div>` +
+    `</div>` +
+    `<p class="mg-note">자주 먹는 양을 적어두면 그 숫자가 버튼으로 나와서 한 번에 고를 수 있어요.</p>`;
+}
+
+async function onAddMed(){
+  const name = $('med-name').value;
+  const quick = String($('med-quick').value || '')
+    .split(/[,\s]+/).filter(Boolean).map(Number).filter(n => isFinite(n));
+  try{
+    const m = await DiaryTracks.addMed({
+      name, quick, icon: $('med-icon').value, unit: $('med-unit').value,
+    });
+    renderCalendar(); renderPanel();
+    await openManage();
+    showToast(`${m.icon} ${m.name} 추가했어요`);
+  }catch(e){
+    const msg = $('med-msg');
+    if(msg) msg.textContent = e.message || '약을 추가하지 못했어요';
+  }
+}
+
+async function onRenameMed(id){
+  const t = DiaryTracks.trackById(DiaryTracks.MED_PREFIX + id);
+  if(!t) return;
+  const name = prompt('약 이름', t.name);
+  if(name == null) return;
+  try{
+    await DiaryTracks.renameMed(id, name);
+    renderCalendar(); renderPanel();
+    await openManage();
+  }catch(e){ showToast(e.message || '이름을 바꾸지 못했어요'); }
+}
+
+async function onRemoveMed(id){
+  const tid = DiaryTracks.MED_PREFIX + id;
+  const t = DiaryTracks.trackById(tid);
+  if(!t) return;
+  const days = (DiaryStore.stats().trackDays || {})[tid] || 0;
+  // 선언만 지우면 기록은 어느 화면에도 안 걸린 채 남는다. 그래서 같이 지우고,
+  // 무엇이 사라지는지 먼저 말한다.
+  const ok = confirm(days
+    ? `'${t.name}' 기록을 지울까요?\n남겨 둔 ${fmtNum(days)}일치가 함께 사라집니다.`
+    : `'${t.name}'을(를) 목록에서 지울까요?`);
+  if(!ok) return;
+  if(days) await DiaryStore.clearTrack(tid);
+  await DiaryTracks.removeMed(id);
+  renderCalendar(); renderPanel();
+  await openManage();
+  showToast(`🗑 '${t.name}' 지웠어요`);
+}
+
 async function openManage(){
   const s = DiaryStore.stats();
-  const trackRows = DiaryTracks.TRACKS.map(t => {
+  const trackRows = DiaryTracks.all().map((t, i) => {
     const days = (s.trackDays || {})[t.id] || 0;
     const on = DiaryTracks.isOn(t.id);
-    return `<label class="mg-track${t.always ? ' fixed' : ''}">` +
-      `<input type="checkbox" ${on ? 'checked' : ''} ${t.always ? 'disabled' : ''} ` +
+    const cid = 'mgt-' + i;
+    // 사용자가 추가한 약만 이름을 바꾸거나 지울 수 있다 (t.med이 그 표식)
+    const tools = t.med
+      ? `<span class="mg-track-tools">` +
+          `<button class="mg-mini" title="이름 바꾸기" aria-label="${escapeHtml(t.name)} 이름 바꾸기" ` +
+            `onclick="onRenameMed('${t.med.id}')">✎</button>` +
+          `<button class="mg-mini danger" title="지우기" aria-label="${escapeHtml(t.name)} 지우기" ` +
+            `onclick="onRemoveMed('${t.med.id}')">🗑</button>` +
+        `</span>`
+      : '';
+    return `<div class="mg-track${t.always ? ' fixed' : ''}">` +
+      `<input type="checkbox" id="${cid}" ${on ? 'checked' : ''} ${t.always ? 'disabled' : ''} ` +
         `onchange="toggleTrack('${t.id}', this.checked)">` +
-      `<span class="mg-track-ico">${t.icon}</span>` +
-      `<span class="mg-track-t"><b>${escapeHtml(t.name)}</b>` +
-        `<span class="mg-track-d">${t.always ? '항상 켜져 있어요' : escapeHtml(t.desc || '')}</span></span>` +
+      `<label class="mg-track-lb" for="${cid}">` +
+        `<span class="mg-track-ico">${escapeHtml(t.icon)}</span>` +
+        `<span class="mg-track-t"><b>${escapeHtml(t.name)}</b>` +
+          `<span class="mg-track-d">${t.always ? '항상 켜져 있어요' : escapeHtml(t.desc || '')}</span></span>` +
+      `</label>` +
       `<span class="mg-track-n">${days ? fmtNum(days) + '일' : ''}</span>` +
-    `</label>`;
+      tools +
+    `</div>`;
   }).join('');
   $('mg-body').innerHTML =
     `<div class="mg-sec-t">기록할 것</div>` +
     `<div class="mg-tracks">${trackRows}</div>` +
     `<p class="mg-note">끄더라도 이미 남긴 기록은 지워지지 않고, 그 날짜에는 계속 보입니다.</p>` +
+    medFormHtml() +
     `<div class="mg-stats">` +
       `<div><span>일기</span><b>${fmtNum(s.notes)}편</b></div>` +
       `<div><span>경로</span><b>${fmtNum(s.routes)}일</b></div>` +
@@ -741,6 +830,9 @@ window.openManage = openManage;
 window.closeManage = closeManage;
 window.wipeRoutes = wipeRoutes;
 window.toggleTrack = toggleTrack;
+window.onAddMed = onAddMed;
+window.onRenameMed = onRenameMed;
+window.onRemoveMed = onRemoveMed;
 
 // ── 로그아웃 ────────────────────────────────
 function openLogout(){ $('logout-modal').style.display = 'flex'; }

@@ -239,6 +239,38 @@ async function deleteRoute(ds){
   await touch(key);
 }
 
+/**
+ * 한 트랙의 기록을 전부 지운다. 사용자가 추가한 약을 목록에서 뺄 때 쓴다 —
+ * 선언만 치우면 기록이 아무 화면에도 안 걸리는 유령으로 남는다.
+ * 경로를 지울 때와 같이 삭제 표식을 남긴다(동기화로 되살아나지 않게).
+ * @returns {number} 지운 날 수
+ */
+async function clearTrack(trackId){
+  const now = Date.now();
+  const touched = [];
+  let n = 0;
+  for(const key of monthKeys()){
+    const m = _months.get(key);
+    let hit = false;
+    for(const ds in m.days){
+      const day = m.days[ds];
+      if(day.t && day.t[trackId] && day.t[trackId].v != null){
+        day.t[trackId] = { v: null, at: now };
+        hit = true; n++;
+      }
+    }
+    if(hit){ _dirty.add(key); touched.push(key); await saveMonth(key); }
+  }
+  if(n){
+    await saveDirty();
+    emit('data');
+    if(window.DiarySync && typeof window.DiarySync.schedulePush === 'function'){
+      touched.forEach(k => window.DiarySync.schedulePush(k));
+    }
+  }
+  return n;
+}
+
 /** 가져온 경로를 전부 지운다(일기는 남긴다). */
 async function clearRoutes(){
   const now = Date.now();
@@ -370,6 +402,6 @@ window.DiaryStore = {
   getSetting, setSetting, settingsSnapshot, settingsDirty,
   markSettingsClean, markSettingsDirty, applyRemoteSettings,
   getMonth, getDay, monthKeys,
-  setNote, setRoutes, deleteRoute, clearRoutes,
+  setNote, setRoutes, deleteRoute, clearRoutes, clearTrack,
   snapshot, applyRemote, dirtyKeys, markClean, markDirty, stats
 };
