@@ -280,6 +280,32 @@ code{font-family:var(--font-mono);font-size:.92em;background:var(--bg3);padding:
 /* 한 줄짜리 — 끼니처럼 대개 한 줄로 끝나는 칸 */
 .tf-text.one{min-height:0;padding:7px 11px;line-height:1.5;}
 
+/* 태그 (음식처럼 같은 것이 계속 돌아오는 것) */
+.tf-tags{display:flex;align-items:center;gap:5px;flex-wrap:wrap;padding:5px 6px;min-height:36px;
+  border:1px solid var(--border);border-radius:var(--r2);background:var(--bg2);
+  cursor:text;transition:border-color .12s;}
+.tf-tags:focus-within{border-color:var(--accent);background:var(--bg);}
+.tf-tag{display:inline-flex;align-items:center;gap:4px;padding:3px 4px 3px 9px;font-size:12px;
+  border-radius:100px;background:var(--accent-bg);color:var(--accent);font-weight:500;}
+.tf-tag-x{width:16px;height:16px;padding:0;border:none;border-radius:50%;line-height:1;
+  font-size:9px;cursor:pointer;background:transparent;color:inherit;opacity:.6;}
+.tf-tag-x:hover{opacity:1;background:rgba(127,127,127,.22);}
+.tf-tag-in{flex:1;min-width:110px;padding:3px 4px;font-size:13px;border:none;background:transparent;
+  color:var(--text);}
+.tf-tag-in:focus{outline:none;}
+.tf-tag-in:disabled{display:none;}
+
+/* 자동완성 — 지금까지 적은 것 중에서 */
+.tf-sug{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;}
+.tf-sug-i{padding:5px 11px;font-size:12px;border-radius:100px;cursor:pointer;transition:all .12s;
+  border:1px dashed var(--border2);background:var(--bg);color:var(--text3);}
+.tf-sug-i:hover,.tf-sug-i.on{border-style:solid;border-color:var(--accent);
+  background:var(--accent-bg);color:var(--accent);}
+
+/* 트랙 폼 밑 한 줄 (식사의 '7일 N가지') */
+.pn-track-foot:not(:empty){display:flex;gap:12px;margin-top:10px;font-size:11px;color:var(--text3);}
+.pn-track-foot b{color:var(--accent);font-family:var(--font-mono);font-weight:600;}
+
 /* 여럿 중 하나 (브리스톨 척도처럼 눈금이 있는 것) */
 .tf-opts{display:flex;gap:5px;flex-wrap:wrap;max-width:420px;}
 .tf-opt{flex:1;min-width:34px;padding:7px 0;font-size:12px;font-weight:600;font-family:var(--font-mono);

@@ -266,6 +266,8 @@ function renderPanel(){
         `<span class="pn-track-nm">${escapeHtml(t.name)}</span>` +
         `<span class="pn-track-saved" id="tsaved-${t.id}"></span></div>` +
       `<div class="pn-track-body">${DiaryTracks.fieldsHtml(t, DiaryStore.getTrack(selDate, t.id))}</div>` +
+      // 트랙이 폼 밑에 한 줄 더 붙이고 싶을 때 (식사의 '7일 N가지')
+      (t.foot ? `<div class="pn-track-foot" id="tfoot-${t.id}"></div>` : '') +
     `</section>`;
   });
 
@@ -284,6 +286,11 @@ function renderPanel(){
   panel.querySelectorAll('.pn-track').forEach(sec => {
     const t = DiaryTracks.trackById(sec.dataset.track);
     if(!t) return;
+    const foot = () => {
+      const el = t.foot && $('tfoot-' + t.id);
+      if(el) el.innerHTML = t.foot(selDate);
+    };
+    foot();
     DiaryTracks.wireFields(sec.querySelector('.pn-track-body'), t, async val => {
       const ds = selDate;
       await DiaryStore.setTrack(ds, t.id, val);
@@ -292,6 +299,7 @@ function renderPanel(){
       if(mark){ mark.textContent = '저장됨'; setTimeout(() => { if(mark) mark.textContent = ''; }, 1600); }
       updateCellBadges(ds);
       renderMonthSummary();
+      foot();
     });
   });
 
