@@ -300,7 +300,10 @@ function medTrack(m){
     name: m.name,
     icon: m.icon || '💊',
     med: m,                     // 이름을 바꾸거나 지울 때 쓸 원본
-    desc: '먹은 양과 그날의 기록을 남깁니다',
+    // 설명 자리에 "먹은 양과 그날의 기록을 남깁니다"를 약마다 똑같이 반복하면
+    // 두 번째 약부터는 읽을 이유가 없는 글이 된다. 이 약만의 정보를 적는다.
+    desc: [m.unit && `단위 ${m.unit}`, (m.quick || []).length && `자주 ${m.quick.join(', ')}`]
+      .filter(Boolean).join(' · '),
     fields: [
       { key: 'dose', type: 'number', label: '복용량', unit,
         min: 0, max: 9999, step: 'any', quick: m.quick || [] },

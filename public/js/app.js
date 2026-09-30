@@ -710,13 +710,15 @@ function medFormHtml(){
         `<datalist id="med-units">` +
           ['mg', 'g', '정', '캡슐', 'ml', 'IU'].map(u => `<option value="${u}">`).join('') +
         `</datalist>` +
-        `<input id="med-quick" class="mg-med-q" maxlength="40" placeholder="자주 먹는 양 (예: 0, 1, 2)" ` +
+        // 칸이 좁아서(특히 휴대폰) 긴 안내는 잘린다. 형식만 보이고 뜻은 아래 줄이 맡는다.
+        `<input id="med-quick" class="mg-med-q" maxlength="40" placeholder="예: 0, 1, 2" ` +
           `aria-label="자주 먹는 양">` +
         `<button class="btn pri" onclick="onAddMed()">추가</button>` +
       `</div>` +
       `<div class="mg-med-msg" id="med-msg"></div>` +
     `</div>` +
-    `<p class="mg-note">자주 먹는 양을 적어두면 그 숫자가 버튼으로 나와서 한 번에 고를 수 있어요.</p>`;
+    `<p class="mg-note"><b>자주 먹는 양</b>을 쉼표로 적어두면 그 숫자가 버튼으로 나와서 ` +
+      `한 번에 고를 수 있어요.</p>`;
 }
 
 async function onAddMed(){

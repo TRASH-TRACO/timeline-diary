@@ -535,3 +535,22 @@ code{font-family:var(--font-mono);font-size:.92em;background:var(--bg3);padding:
   .hdr-date,.sync-user{display:none;}
   .panel{padding:14px;}
 }
+
+/* ── 손가락으로 쓸 때 ── */
+/*
+ * iOS 사파리는 글씨가 16px보다 작은 칸에 포커스가 가면 화면을 확대한다. 한 번
+ * 확대되면 저절로 돌아오지 않아서, 식사 태그처럼 칸을 옮겨 다니며 적는 화면은
+ * 쓸 때마다 손으로 다시 줄여야 한다.
+ *
+ * viewport에 maximum-scale=1을 박으면 조용해지지만 그건 두 손가락 확대까지
+ * 막는 것이라 — 눈이 나쁜 사람에게서 확대를 뺏는 셈이다 — 글씨를 키우는 쪽으로
+ * 푼다. 데스크톱은 지금 크기가 맞으니 터치 기기에서만 적용한다.
+ */
+@media (pointer: coarse){
+  .tf-input,.tf-text,.tf-tag-in,.pn-note-input,.mg-med input,.sh-range input,.sh-sel{font-size:16px;}
+  .sh-sel{max-width:180px;}
+  /* 같은 화면에서 손가락으로 누르는 것들도 조금 키운다 */
+  .tf-tag{font-size:13px;}
+  .tf-tag-x{width:20px;height:20px;font-size:10px;}
+  .tf-sug-i{padding:10px 9px;}
+}
