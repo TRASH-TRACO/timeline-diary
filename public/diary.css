@@ -295,12 +295,16 @@ code{font-family:var(--font-mono);font-size:.92em;background:var(--bg3);padding:
 .tf-tag-in:focus{outline:none;}
 .tf-tag-in:disabled{display:none;}
 
-/* 자동완성 — 지금까지 적은 것 중에서 */
-.tf-sug{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;}
-.tf-sug-i{padding:5px 11px;font-size:12px;border-radius:100px;cursor:pointer;transition:all .12s;
-  border:1px dashed var(--border2);background:var(--bg);color:var(--text3);}
-.tf-sug-i:hover,.tf-sug-i.on{border-style:solid;border-color:var(--accent);
-  background:var(--accent-bg);color:var(--accent);}
+/* 자동완성 — 지금까지 적은 것 중에서. 입력칸 바로 아래에 떠 있는다 */
+.tf-tagbox{position:relative;}
+.tf-sug{position:absolute;z-index:20;top:100%;left:0;right:0;margin-top:4px;padding:4px;
+  max-height:232px;overflow-y:auto;border:1px solid var(--border2);border-radius:var(--r2);
+  background:var(--bg);box-shadow:var(--shadow2);}
+.tf-sug.up{top:auto;bottom:100%;margin:0 0 4px;}
+.tf-sug-h{padding:5px 8px 6px;font-size:10px;font-weight:600;color:var(--text3);}
+.tf-sug-i{display:block;width:100%;padding:7px 9px;font-size:13px;text-align:left;cursor:pointer;
+  border:none;border-radius:var(--r2);background:transparent;color:var(--text);}
+.tf-sug-i.on{background:var(--accent-bg);color:var(--accent);font-weight:600;}
 
 /* 트랙 폼 밑 한 줄 (식사의 '7일 N가지') */
 .pn-track-foot:not(:empty){display:flex;gap:12px;margin-top:10px;font-size:11px;color:var(--text3);}

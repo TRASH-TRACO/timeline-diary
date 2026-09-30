@@ -451,11 +451,17 @@ function fieldsHtml(track, val){
         `</span>`).join('');
       return `<div class="tf" data-key="${f.key}" data-type="tags" data-max="${f.max}">` +
         `<label class="tf-label" for="${id}">${escapeHtml(f.label)}</label>` +
-        `<div class="tf-tags">${chips}` +
-          `<input id="${id}" class="tf-tag-in" type="text" autocomplete="off" ` +
-            `maxlength="${TAG_MAX}" placeholder="${escapeHtml(f.placeholder || '')}">` +
+        // 제안 목록은 입력칸 바로 아래에 떠야 한다. 흐름 안에 끼워 넣으면 뜰 때마다
+        // 아래 칸들이 밀려서, 고르려고 보는 사이에 화면이 움직인다.
+        `<div class="tf-tagbox">` +
+          `<div class="tf-tags">${chips}` +
+            `<input id="${id}" class="tf-tag-in" type="text" autocomplete="off" ` +
+              `maxlength="${TAG_MAX}" placeholder="${escapeHtml(f.placeholder || '')}" ` +
+              `role="combobox" aria-expanded="false" aria-autocomplete="list" ` +
+              `aria-controls="${id}-sug">` +
+          `</div>` +
+          `<div class="tf-sug" id="${id}-sug" role="listbox" hidden></div>` +
         `</div>` +
-        `<div class="tf-sug" hidden></div>` +
       `</div>`;
     }
     if(f.type === 'choice'){
@@ -589,29 +595,66 @@ function wireFields(box, track, onChange){
     });
     el.querySelectorAll('.tf-tag').forEach(wireChip);
 
-    const closeSug = () => { sug.hidden = true; hi = -1; };
-    const openSug = () => {
+    const opts = () => [...sug.querySelectorAll('.tf-sug-i')];
+    const closeSug = () => {
+      sug.hidden = true;
+      hi = -1;
+      input.setAttribute('aria-expanded', 'false');
+      input.removeAttribute('aria-activedescendant');
+    };
+    /** hi = -1은 "내가 친 글자" 자리. 방향키로 거기까지 돌아올 수 있어야 한다. */
+    const setHi = i => {
+      hi = i;
+      const list = opts();
+      list.forEach((b, k) => {
+        const on = k === i;
+        b.classList.toggle('on', on);
+        b.setAttribute('aria-selected', String(on));
+        if(on) b.scrollIntoView({ block: 'nearest' });
+      });
+      if(i >= 0 && list[i]) input.setAttribute('aria-activedescendant', list[i].id);
+      else input.removeAttribute('aria-activedescendant');
+    };
+    const openSug = pre => {
       if(input.disabled) return closeSug();
-      const items = foodSuggest(input.value, tagsOf(), 8);
+      const items = foodSuggest(input.value, tagsOf(), 10);
       if(!items.length) return closeSug();
       sug.innerHTML = '';
-      items.forEach(n => {
+      // 아무것도 안 쳤는데 목록이 뜨면 이게 뭔지부터 알려준다
+      if(!input.value.trim()){
+        const h = document.createElement('div');
+        h.className = 'tf-sug-h';
+        h.textContent = '자주 먹는 것';
+        sug.appendChild(h);
+      }
+      items.forEach((n, i) => {
         const b = document.createElement('button');
         b.type = 'button';
         b.className = 'tf-sug-i';
+        b.id = `${input.id}-o${i}`;
+        b.setAttribute('role', 'option');
         b.textContent = n;
         // mousedown에서 잡아야 입력칸이 blur되기 전에 고른 게 들어간다
         b.addEventListener('mousedown', e => { e.preventDefault(); add(n); });
+        // 마우스를 얹으면 짚는 자리도 따라간다 — 키보드와 마우스가 서로 안 싸우게
+        b.addEventListener('mousemove', () => { if(hi !== i) setHi(i); });
         sug.appendChild(b);
       });
-      hi = -1;
       sug.hidden = false;
+      // 화면 아래쪽 칸이면 위로 뒤집는다 — 특히 휴대폰에서 자판이 올라와 있으면
+      // 아래로 펼친 목록은 통째로 가려진다.
+      sug.classList.remove('up');
+      const r = sug.getBoundingClientRect();
+      const b = wrap.getBoundingClientRect();
+      if(r.bottom > innerHeight - 8 && b.top > innerHeight - b.bottom) sug.classList.add('up');
+      input.setAttribute('aria-expanded', 'true');
+      setHi(pre ? 0 : -1);
     };
     const moveHi = d => {
-      const items = [...sug.querySelectorAll('.tf-sug-i')];
-      if(!items.length) return;
-      hi = Math.max(-1, Math.min(items.length - 1, hi + d));
-      items.forEach((b, i) => b.classList.toggle('on', i === hi));
+      const n = opts().length;
+      if(!n) return;
+      setHi(d > 0 ? (hi + 1 > n - 1 ? -1 : hi + 1)
+                  : (hi - 1 < -1 ? n - 1 : hi - 1));
     };
 
     function add(raw){
@@ -639,20 +682,24 @@ function wireFields(box, track, onChange){
       if(hit) now();
     }
 
-    input.addEventListener('input', openSug);
-    input.addEventListener('focus', openSug);
+    input.addEventListener('input', () => openSug(false));
+    input.addEventListener('focus', () => openSug(false));
     // 치다 만 글자를 그냥 버리지 않는다
     input.addEventListener('blur', () => { if(input.value.trim()) add(input.value); closeSug(); });
     input.addEventListener('keydown', e => {
       if(e.key === 'ArrowDown' || e.key === 'ArrowUp'){
         e.preventDefault();
-        if(sug.hidden) openSug(); else moveHi(e.key === 'ArrowDown' ? 1 : -1);
+        if(sug.hidden) openSug(e.key === 'ArrowDown');     // ↓로 열면 첫 줄부터 짚는다
+        else moveHi(e.key === 'ArrowDown' ? 1 : -1);
       }else if(e.key === 'Enter' || e.key === ','){
         e.preventDefault();
-        const items = [...sug.querySelectorAll('.tf-sug-i')];
-        add(hi >= 0 && items[hi] ? items[hi].textContent : input.value);
+        const list = opts();
+        add(hi >= 0 && list[hi] ? list[hi].textContent : input.value);
       }else if(e.key === 'Escape'){
+        // 한 번은 목록만 닫고, 한 번 더 누르면 치던 글자를 버린다. blur 때 살려주는
+        // 규칙에서 빠져나갈 길이 있어야 한다.
         if(!sug.hidden){ e.stopPropagation(); closeSug(); }
+        else if(input.value){ e.stopPropagation(); input.value = ''; }
       }else if(e.key === 'Backspace' && !input.value){
         const last = [...el.querySelectorAll('.tf-tag')].pop();
         if(last){ last.remove(); paint(); now(); }
