@@ -245,36 +245,52 @@ function renderPanel(){
   const label = `${d.getMonth() + 1}월 ${d.getDate()}일 (${WD[d.getDay()]})`;
   const isToday = selDate === todayStr();
 
-  const route = DiaryStore.getTrack(selDate, 'route');
-  let html = `<div class="pn-hdr"><div class="pn-date">${label}${isToday ? '<span class="pn-today">오늘</span>' : ''}</div>`;
-  if(route) html += `<button class="pn-del" onclick="removeRoute()" title="이 날 경로 지우기">경로 삭제</button>`;
-  html += `</div>`;
+  let html = `<div class="pn-hdr"><div class="pn-date">${label}${isToday ? '<span class="pn-today">오늘</span>' : ''}</div></div>`;
 
-  if(route){
-    html += `<div class="pn-tabs" role="tablist">` +
-      `<button class="pn-tab${dayView === 'svg' ? ' on' : ''}" data-view="svg" onclick="setDayView('svg')">한눈에 보기</button>` +
-      `<button class="pn-tab${dayView === 'map' ? ' on' : ''}" data-view="map" onclick="setDayView('map')">지도에서 재생</button>` +
-    `</div>`;
-  }
-  html += `<div class="pn-route" id="pn-route"></div>`;
-
-  // 경로 말고 켜져 있는 트랙들 — 선언(fields)만 보고 폼을 그린다
+  // 이 날 고른 트랙들 — 선언(fields)만 보고 폼을 그린다. 경로도 같은 칸에 산다.
   DiaryTracks.tracksFor(selDate).forEach(t => {
-    if(t.id === 'route' || !t.fields) return;
+    const val = DiaryStore.getTrack(selDate, t.id);
+    // 기록이 있는 트랙은 뺄 수 없다. 빼는 건 "이 날은 안 적을래"지 "지울래"가
+    // 아니어서, 적어둔 게 있으면 빼기가 곧 숨기기가 되어버린다.
+    // 버튼은 늘 만들어 두고 보이기만 감춘다. 적는 사이에 기록이 생기고 사라지는데,
+    // 그때마다 화면을 다시 그리면 쓰던 칸에서 커서가 빠진다.
+    const tools =
+      (t.id === 'route' && val ? `<button class="pn-del" onclick="removeRoute()" title="이 날 경로 지우기">경로 삭제</button>` : '') +
+      `<button class="pn-track-x" onclick="dropDayTrack('${t.id}')"${val == null ? '' : ' hidden'} ` +
+        `title="이 날은 빼기" aria-label="${escapeHtml(t.name)} 이 날은 빼기">✕</button>`;
+    let body;
+    if(t.id === 'route'){
+      body = (val ? `<div class="pn-tabs" role="tablist">` +
+          `<button class="pn-tab${dayView === 'svg' ? ' on' : ''}" data-view="svg" onclick="setDayView('svg')">한눈에 보기</button>` +
+          `<button class="pn-tab${dayView === 'map' ? ' on' : ''}" data-view="map" onclick="setDayView('map')">지도에서 재생</button>` +
+        `</div>` : '') +
+        `<div class="pn-route" id="pn-route"></div>`;
+    }else if(t.fields){
+      body = `<div class="pn-track-body">${DiaryTracks.fieldsHtml(t, val)}</div>` +
+        // 트랙이 폼 밑에 한 줄 더 붙이고 싶을 때 (식사의 '7일 N가지')
+        (t.foot ? `<div class="pn-track-foot" id="tfoot-${t.id}"></div>` : '');
+    }else return;
     html += `<section class="pn-track" data-track="${t.id}">` +
       `<div class="pn-track-hdr"><span class="pn-track-ico">${t.icon}</span>` +
         `<span class="pn-track-nm">${escapeHtml(t.name)}</span>` +
-        `<span class="pn-track-saved" id="tsaved-${t.id}"></span></div>` +
-      `<div class="pn-track-body">${DiaryTracks.fieldsHtml(t, DiaryStore.getTrack(selDate, t.id))}</div>` +
-      // 트랙이 폼 밑에 한 줄 더 붙이고 싶을 때 (식사의 '7일 N가지')
-      (t.foot ? `<div class="pn-track-foot" id="tfoot-${t.id}"></div>` : '') +
+        `<span class="pn-track-saved" id="tsaved-${t.id}"></span>${tools}</div>` +
+      body +
     `</section>`;
   });
+
+  // 이 날만 더 기록할 것
+  const off = DiaryTracks.tracksOffFor(selDate);
+  if(off.length){
+    html += `<div class="pn-add"><span class="pn-add-t">이 날 더 기록하기</span>` +
+      off.map(t => `<button class="pn-add-i" onclick="addDayTrack('${t.id}')">` +
+        `${escapeHtml(t.icon)} ${escapeHtml(t.name)}</button>`).join('') +
+    `</div>`;
+  }
 
   html += `<div class="pn-note">` +
     `<label class="pn-note-lbl" for="note-input">오늘의 일기</label>` +
     `<textarea id="note-input" class="pn-note-input" rows="4" maxlength="${DiaryStore.NOTE_MAX}" ` +
-      `placeholder="이 날 어땠나요? 짧게 남겨두면 나중에 경로와 함께 보입니다."></textarea>` +
+      `placeholder="이 날 어땠나요? 짧게 남겨두면 나중에 그날 기록과 함께 보입니다."></textarea>` +
     `<div class="pn-note-foot"><span id="note-count">0/${DiaryStore.NOTE_MAX}</span><span id="note-saved" class="pn-saved"></span></div>` +
   `</div>`;
 
@@ -285,18 +301,21 @@ function renderPanel(){
   // 트랙 폼 — 입력이 멎으면 저장한다
   panel.querySelectorAll('.pn-track').forEach(sec => {
     const t = DiaryTracks.trackById(sec.dataset.track);
-    if(!t) return;
+    const box = sec.querySelector('.pn-track-body');
+    if(!t || !box) return;                 // 경로는 폼이 아니라 전용 화면을 쓴다
     const foot = () => {
       const el = t.foot && $('tfoot-' + t.id);
       if(el) el.innerHTML = t.foot(selDate);
     };
+    const drop = sec.querySelector('.pn-track-x');
     foot();
-    DiaryTracks.wireFields(sec.querySelector('.pn-track-body'), t, async val => {
+    DiaryTracks.wireFields(box, t, async val => {
       const ds = selDate;
       await DiaryStore.setTrack(ds, t.id, val);
       if(ds !== selDate) return;
       const mark = $('tsaved-' + t.id);
       if(mark){ mark.textContent = '저장됨'; setTimeout(() => { if(mark) mark.textContent = ''; }, 1600); }
+      if(drop) drop.hidden = val != null;      // 기록이 생기면 뺄 수 없다
       updateCellBadges(ds);
       renderMonthSummary();
       foot();
@@ -378,6 +397,21 @@ function updateCellNoteMark(ds){
   }else if(!has && mk) mk.remove();
   if(mk) mk.title = (rec && rec.note) || '';
 }
+
+/** 이 날만 트랙을 더한다 — 기본 선택은 그대로 */
+async function addDayTrack(id){
+  await DiaryTracks.setOnDay(selDate, id, true);
+  renderPanel();
+  const t = DiaryTracks.trackById(id);
+  if(t) showToast(`${t.icon} ${t.name} — 이 날만 켰어요`);
+}
+/** 이 날만 뺀다. 기록이 있으면 애초에 뺄 수 있는 버튼이 없다. */
+async function dropDayTrack(id){
+  await DiaryTracks.setOnDay(selDate, id, false);
+  renderPanel();
+}
+window.addDayTrack = addDayTrack;
+window.dropDayTrack = dropDayTrack;
 
 async function removeRoute(){
   if(!confirm('이 날의 경로를 지울까요?\n(일기는 그대로 남습니다)')) return;
@@ -783,22 +817,24 @@ async function openManage(){
             `onclick="onRemoveMed('${t.med.id}')">🗑</button>` +
         `</span>`
       : '';
-    return `<div class="mg-track${t.always ? ' fixed' : ''}">` +
-      `<input type="checkbox" id="${cid}" ${on ? 'checked' : ''} ${t.always ? 'disabled' : ''} ` +
+    return `<div class="mg-track">` +
+      `<input type="checkbox" id="${cid}" ${on ? 'checked' : ''} ` +
         `onchange="toggleTrack('${t.id}', this.checked)">` +
       `<label class="mg-track-lb" for="${cid}">` +
         `<span class="mg-track-ico">${escapeHtml(t.icon)}</span>` +
         `<span class="mg-track-t"><b>${escapeHtml(t.name)}</b>` +
-          `<span class="mg-track-d">${t.always ? '항상 켜져 있어요' : escapeHtml(t.desc || '')}</span></span>` +
+          `<span class="mg-track-d">${escapeHtml(t.desc || '')}</span></span>` +
       `</label>` +
       `<span class="mg-track-n">${days ? fmtNum(days) + '일' : ''}</span>` +
       tools +
     `</div>`;
   }).join('');
   $('mg-body').innerHTML =
-    `<div class="mg-sec-t">기록할 것</div>` +
+    `<div class="mg-sec-t">기본으로 기록할 것</div>` +
     `<div class="mg-tracks">${trackRows}</div>` +
-    `<p class="mg-note">끄더라도 이미 남긴 기록은 지워지지 않고, 그 날짜에는 계속 보입니다.</p>` +
+    `<p class="mg-note">여기서 고른 것이 날마다 기본으로 올라옵니다. ` +
+      `하루하루는 그 날 화면에서 더하거나 뺄 수 있어요.<br>` +
+      `끄더라도 이미 남긴 기록은 지워지지 않고, 그 날짜에는 계속 보입니다.</p>` +
     medFormHtml() +
     `<div class="mg-stats">` +
       `<div><span>일기</span><b>${fmtNum(s.notes)}편</b></div>` +
@@ -885,6 +921,7 @@ async function init(){
   applyThemeIcon();
   loadView();
   await DiaryStore.loadLocal();
+  await DiaryTracks.migrateDefaults();
 
   const now = new Date();
   $('today-date').textContent = `${now.getFullYear()}. ${now.getMonth() + 1}. ${now.getDate()}`;

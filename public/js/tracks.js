@@ -127,7 +127,7 @@ const TRACKS = [
     id: 'route',
     name: '이동 경로',
     icon: '🗺️',
-    always: true,               // 이 앱의 기본이라 끌 수 없다
+    desc: '구글 타임라인을 올리면 그날 다닌 길이 그려집니다',
     view: 'route',              // 전용 화면 (지도 재생기)
     /** 캘린더 셀에 무엇을 보일지 */
     cell: v => (v ? { thumb: v, sub: fmtDist(v.d || 0) } : null),
@@ -386,26 +386,72 @@ async function removeMed(id){
 
 const trackById = id => all().find(t => t.id === id) || null;
 
-// ── 켜고 끄기 ───────────────────────────────
-// 기록이 있는 트랙은 설정과 무관하게 보인다. 다른 기기에서 켠 걸 몰라도
-// 기록이 사라진 것처럼 보이면 안 되기 때문이다.
+// ── 무엇을 기록할지 고르기 ──────────────────
+//
+// 두 층이다.
+//   기본 선택 — 설정(tracks). 날마다 다시 고르지 않아도 되게.
+//   그날의 가감 — day.k. 여행 간 날만 경로를 더하고, 오늘은 변 상태를 빼는 식.
+//
+// 그리고 그 위에 규칙 하나: 기록이 있는 트랙은 무엇을 골랐든 보인다. 다른
+// 기기에서 적은 걸 몰라도 기록이 사라진 것처럼 보이면 안 되기 때문이다.
 const SETTING_KEY = 'tracks';
+
+/** 기본으로 고른 트랙인가 */
 function isOn(id){
-  const t = trackById(id);
-  if(t && t.always) return true;
-  const on = DiaryStore.getSetting(SETTING_KEY, {});
-  return !!on[id];
+  return !!DiaryStore.getSetting(SETTING_KEY, {})[id];
 }
+/** 기본 선택을 바꾼다 — 가감하지 않은 모든 날에 적용된다 */
 async function setOn(id, on){
   const cur = { ...DiaryStore.getSetting(SETTING_KEY, {}) };
   if(on) cur[id] = true; else delete cur[id];
   await DiaryStore.setSetting(SETTING_KEY, cur);
 }
-/** 그날 화면에 보여줄 트랙들 — 켜져 있거나, 그날 기록이 있거나 */
+
+const dayK = ds => (DiaryStore.getDay(ds) || {}).k || {};
+/** 그날 이 트랙이 화면에 있나 (기록이 있는지는 따지지 않는다) */
+function isOnDay(ds, id){
+  const k = dayK(ds);
+  if((k.off || []).includes(id)) return false;
+  return isOn(id) || (k.on || []).includes(id);
+}
+/**
+ * 이 날만 트랙을 더하거나 뺀다. 기본 선택은 건드리지 않는다.
+ * 기본과 같아지면 가감 목록에서 빠진다 — 나중에 기본이 바뀌면 따라가야 하니까.
+ */
+async function setOnDay(ds, id, on){
+  const k = dayK(ds);
+  const base = isOn(id);
+  const next = {
+    on:  (k.on  || []).filter(x => x !== id),
+    off: (k.off || []).filter(x => x !== id),
+  };
+  if(on && !base) next.on.push(id);
+  if(!on && base) next.off.push(id);
+  await DiaryStore.setDayTracks(ds, next);
+}
+
+/** 그날 화면에 보여줄 트랙들 */
 function tracksFor(ds){
   const has = DiaryStore.daysTracks(DiaryStore.getDay(ds) || {});
-  const on = DiaryStore.getSetting(SETTING_KEY, {});
-  return all().filter(t => t.always || on[t.id] || has.includes(t.id));
+  return all().filter(t => has.includes(t.id) || isOnDay(ds, t.id));
+}
+/** 그날 아직 안 고른 트랙들 — "이 날 더 기록하기"에 내놓을 것 */
+function tracksOffFor(ds){
+  const shown = tracksFor(ds).map(t => t.id);
+  return all().filter(t => !shown.includes(t.id));
+}
+
+/**
+ * 경로는 원래 끌 수 없는 트랙이었다. 이제 다른 것들과 같은 자리로 내려오면서,
+ * 쓰던 사람의 화면에서 경로가 소리 없이 사라지면 안 되니 한 번 켜준다.
+ * 새로 오는 사람에게도 기본값이다 — 이 앱이 유일하게 할 줄 아는 일이라서.
+ */
+const MIGRATED_KEY = 'tracksV2';
+async function migrateDefaults(){
+  if(DiaryStore.getSetting(MIGRATED_KEY, 0)) return false;
+  await setOn('route', true);
+  await DiaryStore.setSetting(MIGRATED_KEY, 1);
+  return true;
 }
 
 // ── 기본 폼 ─────────────────────────────────
@@ -811,7 +857,8 @@ function defaultShareLevel(track){
 }
 
 window.DiaryTracks = {
-  all, trackById, defaultShareLevel, isOn, setOn, tracksFor,
+  all, trackById, defaultShareLevel, tracksFor, tracksOffFor,
+  isOn, setOn, isOnDay, setOnDay, migrateDefaults,
   fieldsHtml, fieldText, wireFields, openShot,
   meds, addMed, renameMed, removeMed, MED_PREFIX,
   toTags, mealKinds, mealKindsIn, foodIndex, foodSuggest,

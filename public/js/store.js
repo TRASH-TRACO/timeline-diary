@@ -4,6 +4,7 @@
 //
 //   month = { v:1, days:{ 'YYYY-MM-DD': {
 //     note, noteAt,                       // 기본 일기 — 항상 있다
+//     k: { on:[], off:[] }, kAt,          // 이 날만의 트랙 가감 (기본 선택과 다른 것만)
 //     t: { 트랙id: { v: 값, at: 시각 } }   // 트랙별 기록 (경로·복약 등)
 //   } } }
 //
@@ -188,6 +189,25 @@ async function setTrack(ds, trackId, value){
   emit('track');
 }
 
+/**
+ * 이 날만의 트랙 가감.
+ *
+ * 기본 선택(설정)과 다른 것만 담는다 — 기본이 나중에 바뀌면 손대지 않은 날은
+ * 그걸 따라가야 하기 때문이다. 그래서 "이 날은 뺐다"는 표시와 "원래 기본이
+ * 아니다"는 서로 다른 뜻이고, 둘을 구분해서 적는다.
+ */
+async function setDayTracks(ds, k){
+  const key = monthOf(ds);
+  const m = getMonth(key, true);
+  const day = m.days[ds] || (m.days[ds] = {});
+  const on = (k && k.on) || [], off = (k && k.off) || [];
+  if(on.length || off.length) day.k = { on, off }; else delete day.k;
+  day.kAt = Date.now();
+  // 트랙을 더하고 빼는 건 화면을 다시 그려야 보이는 일이라, 부른 쪽이 직접 그린다
+  await touch(key, { silent: true });
+  emit('track');
+}
+
 // ── 쓰기 ────────────────────────────────────
 const NOTE_MAX = 1000;
 
@@ -314,6 +334,13 @@ function mergeMonth(key, remote){
       l.noteAt = r.noteAt || 0;
       changed = true;
     }
+    // 이 날만의 트랙 가감도 일기와 같은 규칙으로 — 통째로 최신 것이 이긴다
+    if((r.kAt || 0) > (l.kAt || 0)){
+      const on = (r.k && r.k.on) || [], off = (r.k && r.k.off) || [];
+      if(on.length || off.length) l.k = { on, off }; else delete l.k;
+      l.kAt = r.kAt || 0;
+      changed = true;
+    }
     // 트랙은 종류별로 따로 견준다 — 한쪽에서 약을 쓰고 다른 쪽에서 경로를 올려도
     // 서로를 덮어쓰지 않는다.
     const rt = r.t || (('route' in r || 'routeAt' in r) ? { route: { v: r.route || null, at: r.routeAt || 0 } } : null);
@@ -330,7 +357,7 @@ function mergeMonth(key, remote){
       }
     }
     // 양쪽 모두 아무것도 없던 날이면 굳이 빈 항목을 남기지 않는다
-    if(!l.note && !l.noteAt && !daysTracks(l).length && !(l.t && Object.keys(l.t).length)) delete local.days[ds];
+    if(!l.note && !l.noteAt && !l.kAt && !daysTracks(l).length && !(l.t && Object.keys(l.t).length)) delete local.days[ds];
   }
   return changed;
 }
@@ -402,6 +429,6 @@ window.DiaryStore = {
   getSetting, setSetting, settingsSnapshot, settingsDirty,
   markSettingsClean, markSettingsDirty, applyRemoteSettings,
   getMonth, getDay, monthKeys,
-  setNote, setRoutes, deleteRoute, clearRoutes, clearTrack,
+  setNote, setDayTracks, setRoutes, deleteRoute, clearRoutes, clearTrack,
   snapshot, applyRemote, dirtyKeys, markClean, markDirty, stats
 };
