@@ -140,4 +140,105 @@ function previewShare(days, spec){
   return out;
 }
 
-window.DiaryShare = { redactRoute, routeSummary, projectDay, previewShare, HOME_RADIUS, HOME_NAMES };
+// ── Markdown으로 ────────────────────────────
+//
+// 같은 공개본을 글로 옮긴다. 거르는 일은 projectDay가 이미 다 했고 여기서는
+// 모양만 바꾼다 — 무엇이 나가는지 정하는 자리가 둘이 되면, 한쪽만 고치는 날이
+// 반드시 온다.
+//
+// 받는 쪽이 사람이 아니라 AI 에이전트라서 두 가지를 더 지킨다.
+//   1. 저장된 키(fh, type:6)가 아니라 사람이 읽는 말로 적는다. 에이전트는
+//      이 앱의 스키마를 모른다.
+//   2. 무엇이 빠졌는지도 적는다. 안 적으면 "기록이 없던 날"과 "안 내보낸
+//      트랙"을 구분할 수 없어서, 없는 걸 0으로 읽어버린다.
+
+const MD_WD = ['일', '월', '화', '수', '목', '금', '토'];
+const mdWeekday = ds => MD_WD[new Date(ds + 'T00:00:00').getDay()] || '';
+
+/** 경로는 좌표 대신 숫자만. 폴리라인을 글로 풀면 쓸모는 없고 길이만 수만 자가 된다. */
+function mdRoute(v){
+  const out = [];
+  if(v.d != null) out.push(`이동 거리: ${fmtDist(v.d)}`);
+  if(v.s && v.e)  out.push(`기록 구간: ${hmAt(v.s, v.tz)} – ${hmAt(v.e, v.tz)}`);
+  const places = v.places != null ? v.places : (v.v2 || v.visits || []).length;
+  if(places) out.push(`머문 곳: ${places}곳`);
+  if(v.p) out.push('좌표: 생략 — Markdown에는 담지 않습니다');
+  return out;
+}
+
+/**
+ * @param days  projectDay를 거친 공개본들 { 'YYYY-MM-DD': pub }
+ * @param spec  { note, tracks }
+ * @param opts  { from, to, at }
+ */
+function toMarkdown(days, spec, opts){
+  const o = opts || {};
+  const list = Object.keys(days).sort();
+  const L = [];
+  const span = o.from && o.to ? `${o.from} ~ ${o.to}` : '전체';
+
+  // ── 머리말 — 이 파일이 무엇인지, 무엇이 없는지
+  const inTracks = [], outTracks = [];
+  for(const t of DiaryTracks.all()){
+    const level = (t.share || []).find(l => l.id === (spec.tracks || {})[t.id]);
+    (level ? inTracks : outTracks).push(level ? `${t.name}(${level.name})` : t.name);
+  }
+  if(spec.note) inTracks.push('오늘의 일기'); else outTracks.push('오늘의 일기');
+  L.push(`# 일기 기록 ${span}`, '');
+  L.push(`- 기간: ${span} · 기록이 있는 날 ${list.length}일`);
+  L.push(`- 내보낸 때: ${o.at || new Date().toISOString().slice(0, 16).replace('T', ' ')}`);
+  L.push(`- 담긴 것: ${inTracks.join(', ') || '없음'}`);
+  if(outTracks.length) L.push(`- 담기지 않은 것: ${outTracks.join(', ')}`);
+  L.push('- 사진은 파일 없이 장수만 적혀 있습니다.');
+  L.push('- 여기 없는 날은 위 "담긴 것"에 기록이 없는 날입니다. ' +
+    '"담기지 않은 것"은 기록이 있었는지조차 이 파일로는 알 수 없습니다.');
+  L.push('');
+
+  // ── 요약 — 추이를 물을 때 쓰라고 미리 더해 둔다. 숨긴 필드는 빠진 채로 계산되니
+  //    이 숫자들은 "이 파일에 담긴 것" 기준이다.
+  const sums = [];
+  for(const t of DiaryTracks.all()){
+    if(typeof t.summary !== 'function') continue;
+    const entries = list.filter(ds => days[ds].t && days[ds].t[t.id])
+      .map(ds => ({ ds, v: days[ds].t[t.id] }));
+    if(!entries.length) continue;
+    let rows = null;
+    try{ rows = t.summary(entries); }catch(e){ console.warn('[share] 요약 실패:', t.id, e); }
+    if(rows && rows.length) sums.push(`- **${t.name}** — ` + rows.map(r => `${r.k} ${r.v}`).join(' · '));
+  }
+  if(sums.length) L.push('## 요약 (이 파일에 담긴 것 기준)', '', ...sums, '');
+
+  // ── 날짜별
+  L.push('## 날짜별 기록', '');
+  for(const ds of list){
+    const pub = days[ds];
+    L.push(`### ${ds} (${mdWeekday(ds)})`, '');
+    for(const id in (pub.t || {})){
+      const t = DiaryTracks.trackById(id);
+      if(!t) continue;
+      const v = pub.t[id];
+      L.push(`- ${t.icon} **${t.name}**`);
+      if(id === 'route'){
+        mdRoute(v).forEach(line => L.push(`  - ${line}`));
+        continue;
+      }
+      for(const k in v){
+        const f = (t.fields || []).find(x => x.key === k);
+        const txt = DiaryTracks.fieldText(f, v[k]);
+        if(txt === '') continue;
+        L.push(`  - ${f ? f.label : k}: ${txt}`);
+      }
+    }
+    if(pub.note){
+      L.push('- ✎ **일기**');
+      String(pub.note).split('\n').forEach(line => L.push(`  > ${line}`));
+    }
+    L.push('');
+  }
+  return L.join('\n');
+}
+
+window.DiaryShare = {
+  redactRoute, routeSummary, projectDay, previewShare, toMarkdown,
+  HOME_RADIUS, HOME_NAMES,
+};

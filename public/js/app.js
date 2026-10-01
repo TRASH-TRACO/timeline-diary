@@ -635,11 +635,11 @@ function refreshShare(){
   if(!dsList.length){
     $('sh-stat').innerHTML = '<span class="dim">고른 조건으로는 나갈 게 없어요</span>';
     $('sh-sample').innerHTML = '';
-    $('sh-export').disabled = true;
+    $('sh-export').disabled = $('sh-export-md').disabled = true;
     $('sh-hint').textContent = '';
     return;
   }
-  $('sh-export').disabled = false;
+  $('sh-export').disabled = $('sh-export-md').disabled = false;
   const bits = [`<span><b>${fmtNum(stat.days)}</b>일</span>`];
   for(const id in stat.tracks){
     const t = DiaryTracks.trackById(id);
@@ -702,6 +702,14 @@ function renderShareSample(ds, pub){
   if(pub.note) body.innerHTML += `<div class="sh-row note"><span>✎ 일기</span><b>${escapeHtml(pub.note)}</b></div>`;
 }
 
+function downloadBlob(blob, name){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+
 function exportShare(){
   const { spec, days, stat } = shareProjection();
   const blob = new Blob([JSON.stringify({
@@ -710,12 +718,26 @@ function exportShare(){
     madeAt: new Date().toISOString(),
     spec, days,
   }, null, 1)], { type: 'application/json' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `diary-${_shareSpec.from}_${_shareSpec.to}.json`;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  downloadBlob(blob, `diary-${_shareSpec.from}_${_shareSpec.to}.json`);
   showToast(`📤 ${fmtNum(stat.days)}일치를 내보냈어요`);
+}
+
+/**
+ * 같은 공개본을 Markdown으로. AI에게 그대로 물릴 수 있는 글이다 —
+ * 거르는 건 JSON과 똑같이 projectDay가 하고, 여기서는 모양만 바뀐다.
+ */
+function exportShareMd(){
+  const { spec, days, stat } = shareProjection();
+  // 내보낸 때는 사람보다 기계가 먼저 읽는다. '26. 10. 1. 오전 5:17' 같은 건
+  // 연도도 시간대도 흐려서, 날짜 칸과 같은 모양으로 적는다.
+  const n = new Date();
+  const md = DiaryShare.toMarkdown(days, spec, {
+    from: _shareSpec.from, to: _shareSpec.to,
+    at: `${ymd(n)} ${pad2(n.getHours())}:${pad2(n.getMinutes())}`,
+  });
+  downloadBlob(new Blob([md], { type: 'text/markdown;charset=utf-8' }),
+    `diary-${_shareSpec.from}_${_shareSpec.to}.md`);
+  showToast(`📝 ${fmtNum(stat.days)}일치를 Markdown으로 내보냈어요`);
 }
 
 window.openShare = openShare;
@@ -724,6 +746,7 @@ window.setShareLevel = setShareLevel;
 window.sharePreset = sharePreset;
 window.refreshShare = refreshShare;
 window.exportShare = exportShare;
+window.exportShareMd = exportShareMd;
 
 // ── 데이터 관리 ─────────────────────────────
 /**

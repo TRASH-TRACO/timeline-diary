@@ -675,7 +675,8 @@ function fieldText(f, val){
   if(f.type === 'bool')   return val ? '예' : '아니오';
   if(f.type === 'choice'){
     const o = (f.options || []).find(x => x.v === val);
-    return o ? (o.desc ? `${o.name} — ${o.desc}` : o.name) : String(val);
+    // 설명 안에 이미 —가 들어 있을 수 있어서 괄호로 감싼다
+    return o ? (o.desc ? `${o.name} (${o.desc})` : o.name) : String(val);
   }
   if((f.type === 'number' || f.type === 'counter') && f.unit) return `${fmtNum(val)} ${f.unit}`;
   return String(val);
