@@ -318,7 +318,9 @@ code{font-family:var(--font-mono);font-size:.92em;background:var(--bg3);padding:
   cursor:text;transition:border-color .12s;}
 .tf-tags:focus-within{border-color:var(--accent);background:var(--bg);}
 .tf-tag{display:inline-flex;align-items:center;gap:4px;padding:3px 4px 3px 9px;font-size:12px;
-  border-radius:100px;background:var(--accent-bg);color:var(--accent);font-weight:500;}
+  border-radius:100px;background:var(--accent-bg);color:var(--accent);font-weight:500;
+  cursor:pointer;transition:box-shadow .12s;}
+.tf-tag:hover{box-shadow:0 0 0 1px var(--accent) inset;}
 .tf-tag i{font-style:normal;font-weight:400;font-size:11px;opacity:.72;padding-left:1px;font-family:var(--font-mono);}
 .tf-tag-x{width:16px;height:16px;padding:0;border:none;border-radius:50%;line-height:1;
   font-size:9px;cursor:pointer;background:transparent;color:inherit;opacity:.6;}

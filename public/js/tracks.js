@@ -632,7 +632,8 @@ function fieldsHtml(track, val){
       // 입력칸을 칩들 뒤에 같이 둔다 — 적은 것과 적는 자리가 한 줄로 이어져야
       // "목록에 더한다"는 게 눈에 보인다.
       const chips = toTags(v[f.key]).map(t =>
-        `<span class="tf-tag" data-v="${escapeHtml(t)}">${escapeHtml(tagName(t))}` +
+        `<span class="tf-tag" data-v="${escapeHtml(t)}" title="눌러서 고치기">` +
+          `${escapeHtml(tagName(t))}` +
           (tagQty(t) ? `<i>${escapeHtml(tagQty(t))}</i>` : '') +
           `<button type="button" class="tf-tag-x" aria-label="${escapeHtml(tagName(t))} 빼기">✕</button>` +
         `</span>`).join('');
@@ -806,9 +807,31 @@ function wireFields(box, track, onChange){
       input.disabled = full;
       input.placeholder = full ? '' : ph;
     };
-    const wireChip = ch => ch.querySelector('.tf-tag-x').addEventListener('click', () => {
-      ch.remove(); paint(); now();
-    });
+    /**
+     * 칩을 입력칸으로 되돌린다.
+     *
+     * 한 번 들어간 태그를 지우고 다시 치게 하면, 추천에서 '밥'을 고른 뒤에
+     * 양을 붙이는 것 같은 뻔한 일이 못 할 일이 된다. 되돌리기는 지우기와 달리
+     * 잃는 게 없다 — 딴 데를 눌러도 blur가 다시 넣어준다.
+     */
+    const unpack = ch => {
+      if(input.value.trim()) add(input.value);   // 치던 게 있으면 그것부터 넣고
+      const v = ch.dataset.v;
+      ch.remove();
+      paint();                                   // 꽉 차서 숨겼던 입력칸이 돌아온다
+      input.value = v;
+      input.focus();
+      try{ input.setSelectionRange(v.length, v.length); }catch(_){}
+      now();
+      openSug(false);
+    };
+    const wireChip = ch => {
+      ch.querySelector('.tf-tag-x').addEventListener('click', e => {
+        e.stopPropagation();                     // ✕는 지우기, 칩 본체는 고치기
+        ch.remove(); paint(); now();
+      });
+      ch.addEventListener('click', () => unpack(ch));
+    };
     el.querySelectorAll('.tf-tag').forEach(wireChip);
 
     const opts = () => [...sug.querySelectorAll('.tf-sug-i')];
@@ -889,6 +912,7 @@ function wireFields(box, track, onChange){
         const ch = document.createElement('span');
         ch.className = 'tf-tag';
         ch.dataset.v = t;
+        ch.title = '눌러서 고치기';
         ch.append(nm);
         if(tagQty(t)){
           const q = document.createElement('i');
@@ -931,8 +955,10 @@ function wireFields(box, track, onChange){
         if(!sug.hidden){ e.stopPropagation(); closeSug(); }
         else if(input.value){ e.stopPropagation(); input.value = ''; }
       }else if(e.key === 'Backspace' && !input.value){
+        // 지우지 않고 되돌린다. 한 번 더 누르면 글자가 지워지니, 결국 누르는
+        // 만큼만 없어진다 — 통째로 날리고 다시 치는 것보다 낫다.
         const last = [...el.querySelectorAll('.tf-tag')].pop();
-        if(last){ last.remove(); paint(); now(); }
+        if(last){ e.preventDefault(); unpack(last); }
       }
     });
     // 칩 사이 빈 자리를 눌러도 입력칸으로 들어간다
