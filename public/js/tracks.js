@@ -42,7 +42,7 @@ const MEALS = [
 // 끼니를 한 줄 글로 받으면 '쌀밥'·'흰쌀밥'·'밥'이 전부 다른 음식이 되어 가짓수를
 // 셀 수가 없다. 태그로 받으면 음식에 고정된 이름이 생긴다 — 타이핑이 줄어드는 건
 // 그 다음 따라오는 덤이다.
-const TAG_MAX = 20;
+const TAG_MAX = 30;
 const splitTags = s => String(s == null ? '' : s)
   .split(/[,·\n]/).map(x => x.trim().replace(/\s+/g, ' ').slice(0, TAG_MAX)).filter(Boolean);
 /** 저장된 값을 태그 목록으로. 예전 기록은 한 줄 글이라 읽을 때만 쪼갠다. */
@@ -51,6 +51,20 @@ function toTags(v){
   return v ? splitTags(v) : [];
 }
 
+/**
+ * 양은 밑줄 뒤에 붙인다 — `밥_1공기`.
+ *
+ * 이름과 양은 사는 기간이 다르다. '밥'은 계속 돌아와서 사전에 쌓여야 하고,
+ * '1공기'는 그날 그 끼니에만 해당한다. 양까지 통째로 사전에 넣으면
+ * `밥_1공기`·`밥_2공기`·`밥_반공기`가 각각 다른 음식이 되어, 추천 목록도
+ * 가짓수 세기도 망가진다. 그래서 저장은 한 문자열로 하되 **읽을 때 쪼갠다**.
+ */
+const TAG_SEP = '_';
+const tagName = t => String(t).split(TAG_SEP)[0].trim() || String(t).trim();
+const tagQty  = t => String(t).split(TAG_SEP).slice(1).join(TAG_SEP).trim();
+/** 사람에게 보일 한 줄 — '밥 1공기' */
+const tagLabel = t => (tagQty(t) ? `${tagName(t)} ${tagQty(t)}` : tagName(t));
+
 // 한글 초성 — 'ㅆ'만 쳐도 '쌀밥'이 걸리게 한다
 const CHO = ['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
 const choOf = s => [...String(s)].map(c => {
@@ -58,10 +72,10 @@ const choOf = s => [...String(s)].map(c => {
   return (i >= 0 && i < 11172) ? CHO[Math.floor(i / 588)] : c;
 }).join('');
 
-/** 하루 기록에서 먹은 음식 종류 */
+/** 하루 기록에서 먹은 음식 종류 — 양은 빼고 이름으로만 센다 */
 function mealKinds(v){
   const out = new Set();
-  if(v) MEALS.forEach(m => toTags(v[m.key]).forEach(t => out.add(t)));
+  if(v) MEALS.forEach(m => toTags(v[m.key]).forEach(t => out.add(tagName(t))));
   return out;
 }
 /** 기간 안에 먹은 음식 종류 */
@@ -94,11 +108,14 @@ function foodIndex(){
     for(const ds in m.days){
       const v = m.days[ds].t && m.days[ds].t.meals && m.days[ds].t.meals.v;
       if(!v) continue;
+      // 사전에는 이름만 쌓는다. 양까지 넣으면 '밥_1공기'와 '밥_2공기'가
+      // 서로 다른 음식으로 줄줄이 추천에 뜬다.
       MEALS.forEach(mm => toTags(v[mm.key]).forEach(t => {
-        const e = seen.get(t) || { n: 0, last: '' };
+        const nm = tagName(t);
+        const e = seen.get(nm) || { n: 0, last: '' };
         e.n++;
         if(ds > e.last) e.last = ds;
-        seen.set(t, e);
+        seen.set(nm, e);
       }));
     }
   }
@@ -242,7 +259,7 @@ const TRACKS = [
     // 치는 게 아니라 고르는 일이 된다.
     fields: MEALS.map(m => ({
       key: m.key, type: 'tags', label: m.label, max: 12,
-      placeholder: '음식 적고 Enter',
+      placeholder: '음식 적고 Enter (양은 밥_1공기)',
     })).concat([
       { key: 'photos', type: 'photo', label: '식사 사진', max: 4 },
     ]),
@@ -615,8 +632,9 @@ function fieldsHtml(track, val){
       // 입력칸을 칩들 뒤에 같이 둔다 — 적은 것과 적는 자리가 한 줄로 이어져야
       // "목록에 더한다"는 게 눈에 보인다.
       const chips = toTags(v[f.key]).map(t =>
-        `<span class="tf-tag" data-v="${escapeHtml(t)}">${escapeHtml(t)}` +
-          `<button type="button" class="tf-tag-x" aria-label="${escapeHtml(t)} 빼기">✕</button>` +
+        `<span class="tf-tag" data-v="${escapeHtml(t)}">${escapeHtml(tagName(t))}` +
+          (tagQty(t) ? `<i>${escapeHtml(tagQty(t))}</i>` : '') +
+          `<button type="button" class="tf-tag-x" aria-label="${escapeHtml(tagName(t))} 빼기">✕</button>` +
         `</span>`).join('');
       return `<div class="tf" data-key="${f.key}" data-type="tags" data-max="${f.max}">` +
         `<label class="tf-label" for="${id}">${escapeHtml(f.label)}</label>` +
@@ -669,7 +687,7 @@ function fieldsHtml(track, val){
 /** 저장된 값을 사람이 읽는 한 줄로 (공개본 미리보기 등) */
 function fieldText(f, val){
   if(val == null) return '';
-  if(f && f.type === 'tags') return toTags(val).join(', ');
+  if(f && f.type === 'tags') return toTags(val).map(tagLabel).join(', ');
   if(Array.isArray(val)) return `사진 ${val.length}장`;
   if(!f) return String(val);
   if(f.type === 'bool')   return val ? '예' : '아니오';
@@ -815,7 +833,10 @@ function wireFields(box, track, onChange){
     };
     const openSug = pre => {
       if(input.disabled) return closeSug();
-      const items = foodSuggest(input.value, tagsOf(), 10);
+      // 밑줄을 친 뒤로는 양을 적는 중이다. 이때 추천을 띄워 봐야 고르면 적던
+      // 양이 날아갈 뿐이다.
+      if(input.value.includes(TAG_SEP)) return closeSug();
+      const items = foodSuggest(input.value, tagsOf().map(tagName), 10);
       if(!items.length) return closeSug();
       sug.innerHTML = '';
       // 아무것도 안 쳤는데 목록이 뜨면 이게 뭔지부터 알려준다
@@ -859,18 +880,29 @@ function wireFields(box, track, onChange){
       let hit = false;
       // 쉼표로 붙여넣어도 알아서 쪼갠다 — '쌀밥, 청국장, 된장'
       for(const t of splitTags(raw)){
-        if(tagsOf().includes(t) || tagsOf().length >= max) continue;
+        const nm = tagName(t);
+        // 같은 음식은 한 끼에 하나. 다시 넣으면 새 것이 이긴다 — 추천에서 '밥'을
+        // 고른 뒤에 '밥_1공기'로 양을 붙일 수 있어야 한다.
+        const dup = [...el.querySelectorAll('.tf-tag')].find(c => tagName(c.dataset.v) === nm);
+        if(dup && dup.dataset.v === t) continue;
+        if(!dup && tagsOf().length >= max) continue;
         const ch = document.createElement('span');
         ch.className = 'tf-tag';
         ch.dataset.v = t;
-        ch.append(t);
+        ch.append(nm);
+        if(tagQty(t)){
+          const q = document.createElement('i');
+          q.textContent = tagQty(t);
+          ch.appendChild(q);
+        }
         const x = document.createElement('button');
         x.type = 'button';
         x.className = 'tf-tag-x';
         x.textContent = '✕';
-        x.setAttribute('aria-label', t + ' 빼기');
+        x.setAttribute('aria-label', nm + ' 빼기');
         ch.appendChild(x);
-        wrap.insertBefore(ch, input);
+        wrap.insertBefore(ch, dup || input);
+        if(dup) dup.remove();
         wireChip(ch);
         hit = true;
       }
@@ -1010,6 +1042,7 @@ window.DiaryTracks = {
   isOn, setOn, isOnDay, setOnDay, migrateDefaults,
   fieldsHtml, fieldText, wireFields, openShot,
   meds, addMed, renameMed, removeMed, MED_PREFIX,
-  toTags, mealKinds, mealKindsIn, foodIndex, foodSuggest,
+  toTags, tagName, tagQty, tagLabel, TAG_SEP,
+  mealKinds, mealKindsIn, foodIndex, foodSuggest,
   SETTING_KEY, MEDS_KEY, BRISTOL, MEALS, SKIN_AREAS,
 };

@@ -176,7 +176,12 @@ setTimeout(function(){document.documentElement.classList.remove('booting');},200
             </div>
           </div>
           <div class="sh-sec">
-            <div class="sh-sec-t">무엇을 담을까요</div>
+            <div class="sh-sec-t">무엇을 담을까요
+              <span class="sh-all">
+                <button class="sh-preset" onclick="shareAll(true)">모두 담기</button>
+                <button class="sh-preset" onclick="shareAll(false)">모두 빼기</button>
+              </span>
+            </div>
             <div id="sh-tracks"></div>
             <label class="sh-note-opt">
               <input type="checkbox" id="sh-note" onchange="refreshShare()">

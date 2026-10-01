@@ -585,6 +585,19 @@ function setShareLevel(id, level){
   _shareSpec.tracks[id] = level;
   openShare();                          // 설명 줄까지 다시 그린다
 }
+/**
+ * 한 가지만 뽑고 싶을 때, 나머지를 하나씩 끄고 있으면 안 쓰게 된다.
+ * '모두 빼기' 뒤에 원하는 것만 켜는 게 두 번이면 끝난다.
+ */
+function shareAll(on){
+  DiaryTracks.all().forEach(t => {
+    const lv = on ? DiaryTracks.defaultShareLevel(t) : null;
+    _shareSpec.tracks[t.id] = lv ? lv.id : '';
+  });
+  _shareSpec.note = on;
+  $('sh-note').checked = on;
+  openShare();
+}
 function sharePreset(kind){
   const span = DiaryStore.dateSpan();
   const t = new Date();
@@ -743,6 +756,7 @@ function exportShareMd(){
 window.openShare = openShare;
 window.closeShare = closeShare;
 window.setShareLevel = setShareLevel;
+window.shareAll = shareAll;
 window.sharePreset = sharePreset;
 window.refreshShare = refreshShare;
 window.exportShare = exportShare;
