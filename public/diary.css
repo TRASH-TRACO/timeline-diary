@@ -358,6 +358,11 @@ code{font-family:var(--font-mono);font-size:.92em;background:var(--bg3);padding:
 .tf-bool.on{background:var(--accent-bg);border-color:var(--accent);color:var(--accent);font-weight:600;}
 
 /* 사진 */
+/* 짧은 칸이 여럿일 때(부위별 사진) 나란히 세운다 — 세로로만 쌓으면 오른쪽이
+   통째로 비고, 칸 넷이 화면 한 장을 다 먹는다 */
+/* 같은 줄에 선 칸들은 윗변이 맞아야 한다. 첫 칸만 .tf + .tf를 못 받아서 12px
+   올라가 있으면 한 줄인데 어긋나 보인다. */
+.tf-narrow{display:inline-block;vertical-align:top;margin-right:10px;margin-top:12px;}
 .tf-shots{display:flex;gap:8px;flex-wrap:wrap;}
 .tf-shot{position:relative;width:78px;height:78px;border-radius:var(--r2);overflow:hidden;
   border:1px solid var(--border);background:var(--bg3);flex:none;}

@@ -122,6 +122,16 @@ function foodSuggest(q, exclude, limit){
   return head.concat(rest).slice(0, limit);
 }
 
+// 피부는 부위마다 따로 간다. 이마는 멀쩡한데 턱만 올라오는 날이 있고, 그걸
+// 사진 한 묶음에 섞어 두면 나중에 어디가 어떻게 변했는지 비교할 수가 없다.
+// 키는 짧게 — 그대로 달 문서에 들어가 클라우드까지 올라간다.
+const SKIN_AREAS = [
+  { key: 'fh', label: '이마' },
+  { key: 'lc', label: '왼쪽 볼' },
+  { key: 'rc', label: '오른쪽 볼' },
+  { key: 'mo', label: '입 주변' },
+];
+
 // 하루 수분 목표. 2L는 흔히 쓰는 어림수일 뿐 의학적 기준이 아니다 — 막대를
 // 채우는 눈금으로만 쓰고, 못 채웠다고 뭐라 하지는 않는다.
 const WATER_GOAL = 2000;
@@ -182,6 +192,45 @@ const TRACKS = [
         { k: '누적 복용량', v: fmtNum(total) + ' mg' },
         { k: '기록한 날', v: entries.filter(e => e.v && (e.v.note || '').trim()).length + '일' },
       ];
+    },
+  },
+  {
+    id: 'skin',
+    name: '피부 기록',
+    icon: '🪞',
+    desc: '부위별로 찍어두고 간지러움·메모를 남깁니다',
+    fields: SKIN_AREAS.map(a => ({
+      key: a.key, type: 'photo', label: a.label, max: 2, narrow: true,
+    })).concat([
+      { key: 'itch', type: 'bool', label: '😣 간지러웠다' },
+      { key: 'note', type: 'text', label: '메모', max: 200,
+        placeholder: '올라온 자리나 쓰던 것 바뀐 걸 짧게' },
+    ]),
+    cell(v){
+      if(!v) return null;
+      const n = SKIN_AREAS.reduce((s, a) => s + (v[a.key] || []).length, 0);
+      if(n) return { badge: n + '장' };
+      return (v.itch || v.note) ? { badge: '피부' } : null;
+    },
+    // 얼굴 사진은 이 앱에서 가장 돌려받기 어려운 것이다. 기본은 사진이 빠진 쪽으로.
+    share: [
+      { id: 'itch', name: '간지러움만', fields: ['itch'], recommended: true },
+      { id: 'note', name: '간지러움 + 메모', fields: ['itch', 'note'] },
+      { id: 'all', name: '사진까지',
+        fields: SKIN_AREAS.map(a => a.key).concat(['itch', 'note']),
+        sensitive: true, desc: '얼굴 사진이 함께 나갑니다' },
+    ],
+    summary(entries){
+      const days = entries.filter(e => e.v &&
+        (e.v.itch || e.v.note || SKIN_AREAS.some(a => (e.v[a.key] || []).length)));
+      if(!days.length) return null;
+      const shots = days.reduce((s, e) =>
+        s + SKIN_AREAS.reduce((n, a) => n + (e.v[a.key] || []).length, 0), 0);
+      const itch = days.filter(e => e.v.itch).length;
+      const rows = [{ k: '피부 기록', v: days.length + '일' }];
+      if(shots) rows.push({ k: '피부 사진', v: shots + '장' });
+      if(itch)  rows.push({ k: '간지러운 날', v: itch + '일' });
+      return rows;
     },
   },
   {
@@ -551,7 +600,9 @@ function fieldsHtml(track, val){
         `</div>`).join('');
       // 추가 버튼은 가득 찼을 때도 만들어 두고 보이기만 감춘다. 아예 안 그리면
       // 사진을 뺀 뒤에 되살릴 버튼이 없다.
-      return `<div class="tf" data-key="${f.key}" data-type="photo" data-max="${f.max}">` +
+      // narrow를 주면 다음 칸과 나란히 선다 (부위별 사진처럼 짧은 칸이 여럿일 때)
+      return `<div class="tf${f.narrow ? ' tf-narrow' : ''}" data-key="${f.key}" ` +
+          `data-type="photo" data-max="${f.max}">` +
         `<label class="tf-label">${escapeHtml(f.label)}</label>` +
         `<div class="tf-shots">${shots}` +
           `<button type="button" class="tf-shot-add">＋<span>사진</span></button>` +
@@ -959,5 +1010,5 @@ window.DiaryTracks = {
   fieldsHtml, fieldText, wireFields, openShot,
   meds, addMed, renameMed, removeMed, MED_PREFIX,
   toTags, mealKinds, mealKindsIn, foodIndex, foodSuggest,
-  SETTING_KEY, MEDS_KEY, BRISTOL, MEALS,
+  SETTING_KEY, MEDS_KEY, BRISTOL, MEALS, SKIN_AREAS,
 };
