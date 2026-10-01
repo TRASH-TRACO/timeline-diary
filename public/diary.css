@@ -292,6 +292,26 @@ code{font-family:var(--font-mono);font-size:.92em;background:var(--bg3);padding:
 /* 한 줄짜리 — 끼니처럼 대개 한 줄로 끝나는 칸 */
 .tf-text.one{min-height:0;padding:7px 11px;line-height:1.5;}
 
+/* 더해 가는 칸 (물처럼 하루 중에 조금씩 쌓이는 것) */
+.tf-cnt{display:flex;align-items:baseline;gap:6px;margin-bottom:8px;}
+.tf-cnt-v{width:92px;padding:6px 8px;font-size:17px;font-weight:600;font-family:var(--font-mono);
+  text-align:right;border:1px solid var(--border);border-radius:var(--r2);background:var(--bg2);}
+.tf-cnt-v:focus{outline:none;border-color:var(--accent);background:var(--bg);}
+.tf-cnt-goal{font-size:11px;color:var(--text3);font-family:var(--font-mono);}
+.tf-cnt-pct{margin-left:auto;font-size:11px;font-weight:600;color:var(--accent);
+  font-family:var(--font-mono);}
+.tf-adds{display:flex;gap:6px;flex-wrap:wrap;}
+.tf-add{padding:7px 14px;font-size:12px;font-weight:600;font-family:var(--font-mono);
+  border-radius:100px;cursor:pointer;transition:all .12s;
+  border:1px solid var(--border2);background:var(--bg);color:var(--text2);}
+.tf-add:hover{border-color:var(--accent);background:var(--accent-bg);color:var(--accent);}
+.tf-add.minus{margin-left:auto;font-weight:500;color:var(--text3);}
+.tf-add.minus:hover{border-color:var(--border2);background:var(--bg3);color:var(--text);}
+.tf-bar{height:5px;margin-top:10px;border-radius:100px;background:var(--bg3);overflow:hidden;}
+.tf-bar > i{display:block;height:100%;width:0;border-radius:100px;background:var(--accent);
+  transition:width .2s;}
+.tf-bar > i.full{background:var(--accent);box-shadow:0 0 0 1px var(--accent) inset;}
+
 /* 태그 (음식처럼 같은 것이 계속 돌아오는 것) */
 .tf-tags{display:flex;align-items:center;gap:5px;flex-wrap:wrap;padding:5px 6px;min-height:36px;
   border:1px solid var(--border);border-radius:var(--r2);background:var(--bg2);
@@ -557,7 +577,9 @@ code{font-family:var(--font-mono);font-size:.92em;background:var(--bg3);padding:
  * 푼다. 데스크톱은 지금 크기가 맞으니 터치 기기에서만 적용한다.
  */
 @media (pointer: coarse){
-  .tf-input,.tf-text,.tf-tag-in,.pn-note-input,.mg-med input,.sh-range input,.sh-sel{font-size:16px;}
+  .tf-input,.tf-text,.tf-tag-in,.tf-cnt-v,.pn-note-input,.mg-med input,.sh-range input,
+  .sh-sel{font-size:16px;}
+  .tf-add{padding:9px 16px;}
   .sh-sel{max-width:180px;}
   /* 같은 화면에서 손가락으로 누르는 것들도 조금 키운다 */
   .tf-tag{font-size:13px;}

@@ -122,6 +122,11 @@ function foodSuggest(q, exclude, limit){
   return head.concat(rest).slice(0, limit);
 }
 
+// 하루 수분 목표. 2L는 흔히 쓰는 어림수일 뿐 의학적 기준이 아니다 — 막대를
+// 채우는 눈금으로만 쓰고, 못 채웠다고 뭐라 하지는 않는다.
+const WATER_GOAL = 2000;
+const fmtMl = ml => (ml >= 1000 ? (ml / 1000).toFixed(ml % 1000 ? 1 : 0) + 'L' : ml + 'ml');
+
 const TRACKS = [
   {
     id: 'route',
@@ -226,6 +231,35 @@ const TRACKS = [
       const rows = [{ k: '식사 기록', v: days.length + '일' }];
       if(kinds.size) rows.push({ k: '음식', v: kinds.size + '가지' });
       if(full)       rows.push({ k: '세 끼 다', v: full + '일' });
+      return rows;
+    },
+  },
+  {
+    id: 'water',
+    name: '수분 섭취',
+    icon: '💧',
+    desc: '마실 때마다 눌러서 더해 갑니다',
+    // 물은 하루 끝에 한 번 적는 게 아니라 마실 때마다 더하는 기록이다. 그래서
+    // 값을 덮어쓰는 숫자 칸이 아니라 더해지는 칸(counter)을 쓴다 — 지금까지
+    // 얼마 마셨는지를 머리로 더하고 있으면 그 칸은 안 쓰게 된다.
+    fields: [
+      { key: 'ml', type: 'counter', label: '마신 양', unit: 'ml',
+        add: [200, 350, 500], max: 9000, step: 50, goal: WATER_GOAL },
+    ],
+    cell: v => (v && v.ml ? { badge: fmtMl(v.ml) } : null),
+    share: [
+      { id: 'ml', name: '마신 양', fields: ['ml'], recommended: true },
+    ],
+    summary(entries){
+      const days = entries.filter(e => e.v && e.v.ml > 0);
+      if(!days.length) return null;
+      const total = days.reduce((s, e) => s + e.v.ml, 0);
+      const rows = [
+        { k: '수분 기록', v: days.length + '일' },
+        { k: '하루 평균', v: fmtMl(Math.round(total / days.length)) },
+      ];
+      const hit = days.filter(e => e.v.ml >= WATER_GOAL).length;
+      if(hit) rows.push({ k: `${fmtMl(WATER_GOAL)} 넘긴 날`, v: hit + '일' });
       return rows;
     },
   },
@@ -484,6 +518,30 @@ function fieldsHtml(track, val){
           `<span class="tf-unit">${escapeHtml(f.unit || '')}</span>` +
         `</div></div>`;
     }
+    if(f.type === 'counter'){
+      const cur = v[f.key];
+      const unit = escapeHtml(f.unit || '');
+      const add = f.add || [];
+      // 잘못 눌렀을 때 되돌릴 자리. 숫자를 직접 고칠 수도 있지만, 한 번 더 누르는
+      // 쪽이 빠르다.
+      const btns = add.map(n => `<button type="button" class="tf-add" data-add="${n}">+${n}</button>`)
+        .concat(add.length ? [`<button type="button" class="tf-add minus" data-add="-${add[0]}" ` +
+          `title="잘못 눌렀을 때">−${add[0]}</button>`] : []).join('');
+      return `<div class="tf" data-key="${f.key}" data-type="counter" ` +
+          `data-max="${f.max}" data-goal="${f.goal || 0}">` +
+        `<label class="tf-label" for="${id}">${escapeHtml(f.label)}</label>` +
+        `<div class="tf-cnt">` +
+          `<input id="${id}" class="tf-cnt-v" type="number" inputmode="numeric" min="0" ` +
+            `max="${f.max}" step="${f.step || 1}" placeholder="0" ` +
+            `value="${cur == null ? '' : cur}">` +
+          `<span class="tf-unit">${unit}</span>` +
+          (f.goal ? `<span class="tf-cnt-goal">/ ${fmtNum(f.goal)}${unit}</span>` : '') +
+          `<span class="tf-cnt-pct"></span>` +
+        `</div>` +
+        `<div class="tf-adds">${btns}</div>` +
+        (f.goal ? `<div class="tf-bar"><i></i></div>` : '') +
+      `</div>`;
+    }
     if(f.type === 'photo'){
       const ids = Array.isArray(v[f.key]) ? v[f.key] : [];
       const shots = ids.map(pid =>
@@ -568,7 +626,7 @@ function fieldText(f, val){
     const o = (f.options || []).find(x => x.v === val);
     return o ? (o.desc ? `${o.name} — ${o.desc}` : o.name) : String(val);
   }
-  if(f.type === 'number' && f.unit) return `${val} ${f.unit}`;
+  if((f.type === 'number' || f.type === 'counter') && f.unit) return `${fmtNum(val)} ${f.unit}`;
   return String(val);
 }
 
@@ -584,6 +642,11 @@ function wireFields(box, track, onChange){
       if(el.dataset.type === 'number'){
         const raw = el.querySelector('.tf-input').value.trim();
         if(raw !== '' && isFinite(+raw)) out[key] = +raw;
+      }else if(el.dataset.type === 'counter'){
+        const raw = el.querySelector('.tf-cnt-v').value.trim();
+        const n = Math.max(0, Math.round(+raw));
+        // 0은 "안 마셨다"가 아니라 "아직 안 적었다"로 본다 — 빈 칸과 같게 둔다
+        if(raw !== '' && isFinite(+raw) && n > 0) out[key] = n;
       }else if(el.dataset.type === 'photo'){
         const ids = [...el.querySelectorAll('.tf-shot')].map(s => s.dataset.id);
         if(ids.length) out[key] = ids;
@@ -612,6 +675,18 @@ function wireFields(box, track, onChange){
       el.querySelectorAll('.tf-chip').forEach(c =>
         c.classList.toggle('on', raw !== '' && +c.dataset.v === +raw));
     });
+    // 더해 가는 칸은 막대와 퍼센트를 값에 맞춘다
+    box.querySelectorAll('.tf[data-type="counter"]').forEach(el => {
+      const goal = +el.dataset.goal || 0;
+      const n = Math.max(0, +el.querySelector('.tf-cnt-v').value || 0);
+      const bar = el.querySelector('.tf-bar > i');
+      const pct = el.querySelector('.tf-cnt-pct');
+      if(bar){
+        bar.style.width = (goal ? Math.min(100, n / goal * 100) : 0) + '%';
+        bar.classList.toggle('full', !!goal && n >= goal);
+      }
+      if(pct) pct.textContent = goal && n ? Math.round(n / goal * 100) + '%' : '';
+    });
   };
   let timer = null;
   const fire = () => { sync(); clearTimeout(timer); timer = setTimeout(() => onChange(read()), 400); };
@@ -624,6 +699,17 @@ function wireFields(box, track, onChange){
     sync();
     now();
   }));
+  // 더해 가는 칸 — 누르면 지금 값에 더한다(덮어쓰지 않는다)
+  box.querySelectorAll('.tf[data-type="counter"]').forEach(el => {
+    const input = el.querySelector('.tf-cnt-v');
+    const max = +el.dataset.max || 1e6;
+    el.querySelectorAll('.tf-add').forEach(b => b.addEventListener('click', () => {
+      const next = Math.max(0, Math.min(max, (+input.value || 0) + (+b.dataset.add)));
+      input.value = next || '';          // 0이면 비워서 '아직 안 적음'으로 되돌린다
+      sync();
+      now();
+    }));
+  });
   // 여럿 중 하나 — 고른 것을 다시 누르면 취소된다(잘못 눌렀을 때 되돌릴 길)
   box.querySelectorAll('.tf[data-type="choice"]').forEach(el => {
     const desc = el.querySelector('.tf-opt-d');
@@ -837,8 +923,8 @@ function wireFields(box, track, onChange){
     paint();
   });
 
-  box.querySelectorAll('.tf-input, .tf-text').forEach(el => el.addEventListener('input', fire));
-  box.querySelectorAll('.tf-input, .tf-text').forEach(el => el.addEventListener('blur', () => {
+  box.querySelectorAll('.tf-input, .tf-text, .tf-cnt-v').forEach(el => el.addEventListener('input', fire));
+  box.querySelectorAll('.tf-input, .tf-text, .tf-cnt-v').forEach(el => el.addEventListener('blur', () => {
     clearTimeout(timer); onChange(read());
   }));
   sync();
