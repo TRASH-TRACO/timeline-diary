@@ -242,6 +242,9 @@ const TRACKS = [
       // 이소티논을 비롯해 장을 건드리는 약을 먹는 동안에는 이게 병원에 가야 할
       // 신호일 수 있다. 메모에 묻히지 않게 따로 둔다.
       { key: 'blood', type: 'bool', label: '🩸 피나 점액이 섞였다' },
+      // 말로 옮기기 어려운 건 찍어두는 게 낫다. 진료실에서 "그때 그랬어요"보다
+      // 그날 사진 한 장이 할 말이 많다.
+      { key: 'photos', type: 'photo', label: '사진', max: 3 },
       { key: 'note', type: 'text', label: '메모', max: 200,
         placeholder: '복통·불편감 같은 걸 짧게' },
     ],
@@ -250,16 +253,24 @@ const TRACKS = [
       const bits = [];
       if(v.count != null) bits.push(v.count + '회');
       if(v.type != null)  bits.push(v.type + '형');
-      return bits.length ? { badge: bits.join('·') } : null;
+      if(bits.length) return { badge: bits.join('·') };
+      // 사진만 남긴 날도 캘린더에 흔적이 있어야 한다 — 적었는데 아무것도 안 보이면
+      // 기록이 안 된 줄 안다
+      return (v.photos || []).length ? { badge: '사진' } : null;
     },
+    // 사진은 따로 둔다. 이 앱에서 가장 민감한 내용이라, '메모까지'를 골랐다는
+    // 이유로 딸려 나가면 안 된다.
     share: [
       { id: 'count', name: '횟수만', fields: ['count'], recommended: true },
       { id: 'shape', name: '횟수 + 모양', fields: ['count', 'type', 'blood'] },
       { id: 'all', name: '메모까지', fields: ['count', 'type', 'blood', 'note'],
         sensitive: true, desc: '메모에 적은 증상이 함께 나갑니다' },
+      { id: 'photo', name: '사진까지', fields: ['count', 'type', 'blood', 'note', 'photos'],
+        sensitive: true, desc: '변 사진이 함께 나갑니다' },
     ],
     summary(entries){
-      const days = entries.filter(e => e.v && (e.v.count != null || e.v.type != null));
+      const days = entries.filter(e => e.v &&
+        (e.v.count != null || e.v.type != null || (e.v.photos || []).length));
       if(!days.length) return null;
       const counted = days.filter(e => e.v.count != null);
       const rows = [{ k: '변 기록', v: days.length + '일' }];
