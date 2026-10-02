@@ -29,9 +29,19 @@ async function idbGet(k){
   try{ return await idbTx('readonly', s => s.get(k)); }
   catch(_){ try{ const v = localStorage.getItem('diary:' + k); return v ? JSON.parse(v) : undefined; }catch(__){ return undefined; } }
 }
+/**
+ * @returns {boolean} 정말 저장됐으면 true.
+ *
+ * 저장소가 꽉 차면 조용히 넘어가지 않고 실패를 알린다. 예전에는 실패를 삼키고
+ * localStorage로 물러났는데, Blob은 JSON으로 바꾸면 '{}'가 되어 저장된 척만 하고
+ * 사진이 사라졌다. 담을 수 없는 건 담을 수 없다고 말하는 게 맞다.
+ */
 async function idbSet(k, v){
-  try{ return await idbTx('readwrite', s => s.put(v, k)); }
-  catch(_){ try{ localStorage.setItem('diary:' + k, JSON.stringify(v)); }catch(__){} }
+  try{ await idbTx('readwrite', s => s.put(v, k)); return true; }
+  catch(_){
+    if(v instanceof Blob) return false;          // localStorage에는 못 담는다
+    try{ localStorage.setItem('diary:' + k, JSON.stringify(v)); return true; }catch(__){ return false; }
+  }
 }
 /** 접두사로 시작하는 키들 (사진처럼 개수가 유동적인 것) */
 async function idbKeysWithPrefix(prefix){

@@ -188,6 +188,8 @@ try{ const v = localStorage.getItem('diary_dayview'); if(v === 'map' || v === 's
 
 /** 지도 모듈은 module script라 classic script보다 늦게 뜬다. 늦게 떠도 화면을 맞춘다. */
 window.onMapReady = () => { if(dayView === 'map') renderRouteArea(); };
+/** 사진 모듈도 마찬가지 — 뜨면 비어 있던 썸네일을 채운다 */
+window.onPhotosReady = () => { if(!isEditingPanel()) renderPanel(); };
 
 function setDayView(v){
   if(dayView === v) return;
@@ -889,9 +891,17 @@ async function openManage(){
       const u = await DiaryPhotos.usage();
       const el = $('mg-photos');
       if(el && u.count){
+        const mb = b => (b / 1048576).toFixed(b < 10485760 ? 1 : 0) + ' MB';
+        // 남은 자리를 미리 보여준다. 꽉 찬 다음에 알게 되면 그때는 이미 늦다.
+        const room = u.quota
+          ? `<span class="mg-room">이 기기에서 쓴 자리 ${mb(u.used)} / ${mb(u.quota)}` +
+            (u.bytes ? ` · 사진 ${fmtNum(Math.floor((u.quota - u.used) / (u.bytes / u.count)))}장쯤 더` : '') +
+            `</span>`
+          : '';
         el.innerHTML = `<div class="mg-photos">` +
-          `<span>📷 사진 <b>${fmtNum(u.count)}장</b> · ${(u.bytes / 1048576).toFixed(1)} MB</span>` +
+          `<span>📷 사진 <b>${fmtNum(u.count)}장</b> · ${mb(u.bytes)}</span>` +
           (u.pending ? `<span class="mg-pending">아직 못 올린 사진 ${fmtNum(u.pending)}장</span>` : '') +
+          room +
         `</div>`;
       }
     }catch(_){}

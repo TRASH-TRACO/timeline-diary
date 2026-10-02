@@ -12,8 +12,13 @@
 import { firebaseConfig } from './firebase-config.js';
 
 const SDK = 'https://www.gstatic.com/firebasejs/12.16.0/';
-const MAX_PX = 1600;          // 긴 변
-const QUALITY = 0.82;
+// 사진은 결국 휴대폰 화면에서 본다. 요즘 폰이 가로 400pt 남짓에 3배 밀도라
+// 긴 변 1280px이면 화면에 꽉 채워도 더 뭉개질 게 없다. 그보다 크게 담는 건
+// 기기 저장소와 클라우드를 둘 다 두 배로 쓰면서 아무도 못 보는 화소를 버는 일이다.
+const MAX_PX = 1280;
+const QUALITY = 0.78;
+// 나중에 "그때랑 지금"을 나란히 놓고 볼 사진은 더 크게 둔다(피부). 트랙 선언이
+// px을 주면 그걸 쓴다.
 const PENDING = 'photoPending';
 
 let _st = null;
@@ -35,9 +40,11 @@ const uidNow = () => (window.DiarySync && window.DiarySync.uid && window.DiarySy
  * 올리기 전에 줄인다. 원본 그대로 두면 한 장에 5MB가 넘어 무료 한도를 금방 먹고
  * 화면에 띄우는 것도 느리다. EXIF 회전 정보는 브라우저가 반영하게 둔다.
  */
-async function shrink(file){
+async function shrink(file, opts){
+  const px = (opts && opts.px) || MAX_PX;
+  const q  = (opts && opts.q)  || QUALITY;
   const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
-  const scale = Math.min(1, MAX_PX / Math.max(bmp.width, bmp.height));
+  const scale = Math.min(1, px / Math.max(bmp.width, bmp.height));
   const w = Math.max(1, Math.round(bmp.width * scale));
   const h = Math.max(1, Math.round(bmp.height * scale));
   const c = document.createElement('canvas');
@@ -45,7 +52,7 @@ async function shrink(file){
   c.getContext('2d').drawImage(bmp, 0, 0, w, h);
   if(bmp.close) bmp.close();
   return new Promise((res, rej) =>
-    c.toBlob(b => (b ? res(b) : rej(new Error('사진을 변환하지 못했어요'))), 'image/jpeg', QUALITY));
+    c.toBlob(b => (b ? res(b) : rej(new Error('사진을 변환하지 못했어요'))), 'image/jpeg', q));
 }
 
 const getPending = async () => (await idbGet(PENDING)) || [];
@@ -64,13 +71,17 @@ async function dropPending(id){
  * 사진 한 장을 받아 저장하고 id를 돌려준다.
  * 기기에는 반드시 남고, 업로드는 되면 하고 안 되면 나중에 다시 시도한다.
  */
-async function add(file){
+async function add(file, opts){
   if(!/^image\//.test(file.type || '')) throw new Error('이미지 파일만 올릴 수 있어요');
-  const blob = await shrink(file);
+  const blob = await shrink(file, opts);
   const id = newId();
-  await idbSet('p:' + id, blob);
+  // 기기에 못 담으면 거기서 멈춘다. 예전에는 실패를 모르고 지나가서 빈 id만
+  // 하루 기록에 남고 사진은 사라졌다 — 업로드도 기기 사본을 읽으므로 같이 포기했다.
+  if(!(await idbSet('p:' + id, blob))){
+    throw new Error('이 기기에 저장 공간이 부족해요. 사진을 좀 지우고 다시 해보세요');
+  }
   await addPending(id);
-  upload(id).catch(() => {});     // 실패해도 기기엔 남아 있다
+  upload(id).catch(() => {});     // 못 올려도 기기엔 남아 있다
   return id;
 }
 
@@ -134,7 +145,11 @@ async function remove(id){
   }
 }
 
-/** 이 기기에 남은 사진 용량 (데이터 화면용) */
+/**
+ * 이 기기에 쌓인 사진 (데이터 화면용).
+ * quota는 브라우저가 이 사이트에 내준 전체 몫이다 — 사진만의 몫이 아니고,
+ * 브라우저마다 어림값이라 "대략 이만큼"으로만 쓴다.
+ */
 async function usage(){
   const ids = await idbKeysWithPrefix('p:');
   let bytes = 0;
@@ -142,7 +157,17 @@ async function usage(){
     const b = await idbGet(k);
     if(b && b.size) bytes += b.size;
   }
-  return { count: ids.length, bytes, pending: (await getPending()).length };
+  let quota = 0, used = 0;
+  try{
+    if(navigator.storage && navigator.storage.estimate){
+      const e = await navigator.storage.estimate();
+      quota = e.quota || 0;
+      used = e.usage || 0;
+    }
+  }catch(_){}
+  return { count: ids.length, bytes, pending: (await getPending()).length, quota, used };
 }
 
 window.DiaryPhotos = { add, url, remove, syncPending, usage, MAX_PX };
+// 늦게 뜬 사이에 그려진 썸네일을 채우라고 알린다 (지도와 같은 방식)
+if(typeof window.onPhotosReady === 'function') window.onPhotosReady();

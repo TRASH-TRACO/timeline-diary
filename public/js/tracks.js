@@ -184,7 +184,7 @@ const TRACKS = [
     fields: [
       { key: 'dose', type: 'number', label: '복용량', unit: 'mg',
         min: 0, max: 200, step: 5, quick: [0, 10, 20, 40] },
-      { key: 'photos', type: 'photo', label: '피부 상태', max: 4 },
+      { key: 'photos', type: 'photo', label: '피부 상태', max: 4, px: 1600 },
       // 라벨을 그냥 '기록'으로 두면 아래 '오늘의 일기'와 헷갈린다
       { key: 'note', type: 'text', label: '상태 메모', max: 200,
         placeholder: '피부 상태나 부작용을 짧게' },
@@ -217,7 +217,7 @@ const TRACKS = [
     icon: '🪞',
     desc: '부위별로 찍어두고 간지러움·메모를 남깁니다',
     fields: SKIN_AREAS.map(a => ({
-      key: a.key, type: 'photo', label: a.label, max: 2, narrow: true,
+      key: a.key, type: 'photo', label: a.label, max: 2, narrow: true, px: 1600,
     })).concat([
       { key: 'itch', type: 'bool', label: '😣 간지러웠다' },
       { key: 'note', type: 'text', label: '메모', max: 200,
@@ -619,7 +619,7 @@ function fieldsHtml(track, val){
       // 사진을 뺀 뒤에 되살릴 버튼이 없다.
       // narrow를 주면 다음 칸과 나란히 선다 (부위별 사진처럼 짧은 칸이 여럿일 때)
       return `<div class="tf${f.narrow ? ' tf-narrow' : ''}" data-key="${f.key}" ` +
-          `data-type="photo" data-max="${f.max}">` +
+          `data-type="photo" data-max="${f.max}"${f.px ? ` data-px="${f.px}"` : ''}>` +
         `<label class="tf-label">${escapeHtml(f.label)}</label>` +
         `<div class="tf-shots">${shots}` +
           `<button type="button" class="tf-shot-add">＋<span>사진</span></button>` +
@@ -982,7 +982,9 @@ function wireFields(box, track, onChange){
     const max  = +el.dataset.max;
 
     const paint = () => {
-      el.querySelectorAll('.tf-shot').forEach(async sh => {
+      // 사진 모듈은 module script라 이 파일보다 늦게 뜬다. 아직이면 썸네일은
+      // 비워 두고, 뜨는 즉시 onPhotosReady가 패널을 다시 그린다.
+      if(window.DiaryPhotos) el.querySelectorAll('.tf-shot').forEach(async sh => {
         const img = sh.querySelector('img');
         if(img.src) return;
         const u = await DiaryPhotos.url(sh.dataset.id);
@@ -1012,9 +1014,10 @@ function wireFields(box, track, onChange){
       file.value = '';
       if(!files.length) return;
       msg.textContent = '사진 넣는 중…';
+      let failed = '';
       for(const f of files){
         try{
-          const id = await DiaryPhotos.add(f);
+          const id = await DiaryPhotos.add(f, { px: +el.dataset.px || 0 });
           const sh = document.createElement('div');
           sh.className = 'tf-shot';
           sh.dataset.id = id;
@@ -1022,11 +1025,12 @@ function wireFields(box, track, onChange){
           el.querySelector('.tf-shots').insertBefore(sh, addBtn);
           wireShot(sh);
         }catch(e){
-          msg.textContent = e.message || '사진을 넣지 못했어요';
+          failed = e.message || '사진을 넣지 못했어요';
           continue;
         }
       }
-      msg.textContent = '';
+      // 여기서 무조건 지우면 방금 적은 실패 안내까지 함께 지워진다
+      msg.textContent = failed;
       paint();
       onChange(read());
     });
