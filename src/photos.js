@@ -136,26 +136,39 @@ async function url(id){
   if(!blob){
     const uid = uidNow();
     if(!uid) return null;
-    let href = null;
+    let m, s, ref;
     try{
-      const { m, s } = await storage();
-      href = await m.getDownloadURL(m.ref(s, path(uid, id)));
+      ({ m, s } = await storage());
+      ref = m.ref(s, path(uid, id));
     }catch(e){
-      console.warn('[photos] 주소를 받지 못했습니다:', id, e.code || e.message, path(uid, id));
+      console.warn('[photos] 저장소를 열지 못했습니다:', id, e.code || e.message);
       return null;
     }
+
+    // 인증된 요청으로 바이트만 받아온다.
+    //
+    // getDownloadURL은 "아는 사람은 누구나 열 수 있는" 토큰 주소를 만든다.
+    // 로그인도 필요 없고 만료도 없어서, 한 번 새면(개발자도구, 공유, 캐시)
+    // 영영 열린다. 얼굴·피부·변 사진에 쓸 물건이 아니다.
+    // getBlob은 주소를 만들지 않고, 매 요청이 storage.rules를 거친다.
     try{
-      const res = await fetch(href);
-      if(!res.ok) throw new Error('HTTP ' + res.status);
-      blob = await res.blob();
+      if(typeof m.getBlob !== 'function') throw new Error('getBlob을 쓸 수 없는 SDK');
+      blob = await m.getBlob(ref);
       await idbSet('p:' + id, blob);
     }catch(e){
-      // 받아서 기기에 담는 데 실패해도 주소는 손에 있다. <img src="…">는 CORS를
-      // 타지 않으므로 버킷 설정이 어떻든 화면에는 뜬다 — 기기 캐시만 포기한다.
-      // 사진이 안 보이는 것보다 매번 받아오는 쪽이 낫다.
-      console.warn('[photos] 기기에 담지 못해 주소로 띄웁니다:', id, e.message);
-      _urls.set(id, href);
-      return href;
+      // 마지막 수단. 버킷 CORS가 이 도메인을 허용하지 않으면 getBlob이 막히는데,
+      // 그때 사진이 아예 안 보이는 것보다는 토큰 주소로라도 띄우는 쪽이 낫다.
+      // 다만 이건 주소를 화면에 박아 두는 길이라, 보이면 CORS부터 고쳐야 한다.
+      console.warn('[photos] getBlob 실패 — 토큰 주소로 띄웁니다. 버킷 CORS를 확인하세요:',
+        id, e.code || e.message);
+      try{
+        const href = await m.getDownloadURL(ref);
+        _urls.set(id, href);
+        return href;
+      }catch(e2){
+        console.warn('[photos] 받아오지 못했습니다:', id, e2.code || e2.message, path(uid, id));
+        return null;
+      }
     }
   }
   const u = URL.createObjectURL(blob);
