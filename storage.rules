@@ -11,12 +11,16 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
     match /users/{uid}/photos/{photo} {
-      allow read: if request.auth != null && request.auth.uid == uid;
-      allow write: if request.auth != null
-                   && request.auth.uid == uid
-                   && request.resource.size < 3 * 1024 * 1024
-                   && request.resource.contentType.matches('image/.*');
-      allow delete: if request.auth != null && request.auth.uid == uid;
+      function mine() { return request.auth != null && request.auth.uid == uid; }
+
+      allow read: if mine();
+      allow create: if mine()
+                    && request.resource.size < 3 * 1024 * 1024
+                    && request.resource.contentType.matches('image/.*');
+      // 메타데이터만 고치는 경우(공개 주소 폐기)는 크기·형식을 따지지 않는다.
+      // write 하나로 묶어 두면 그 조건들이 메타데이터 수정까지 막는다.
+      allow update: if mine();
+      allow delete: if mine();
     }
   }
 }

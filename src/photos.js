@@ -97,6 +97,42 @@ function setFail(e){
   if(typeof window.onPhotoSyncChange === 'function') window.onPhotoSyncChange();
 }
 
+/**
+ * 공개 주소를 지운다.
+ *
+ * Firebase는 파일을 올릴 때 firebaseStorageDownloadTokens라는 메타데이터를 붙이고,
+ * 그 토큰이 박힌 주소는 **로그인 없이 누구나 열린다**. storage.rules를 통째로
+ * 비켜 가고 만료도 없어서, 한 번 새면 영영 열린 문이 된다.
+ *
+ * 이 앱은 그 주소를 쓰지 않는다(getBlob으로 받는다). 그러니 만들어 둘 이유도 없다.
+ * 토큰을 비우면 그 주소는 그 자리에서 죽고, 사진을 여는 길은 인증된 요청 하나만
+ * 남는다 — 즉 storage.rules가 진짜 자물쇠가 된다.
+ *
+ * 주의: getDownloadURL()을 부르면 토큰이 새로 만들어진다. 그래서 이 파일 어디에서도
+ * 그걸 부르지 않는다.
+ */
+async function stripToken(m, ref, id){
+  try{
+    await m.updateMetadata(ref, { customMetadata: { firebaseStorageDownloadTokens: '' } });
+    return true;
+  }catch(e){
+    console.warn('[photos] 공개 주소를 지우지 못했습니다:', id, e.code || e.message);
+    return false;
+  }
+}
+
+/** 이미 올라간 사진들의 공개 주소를 한꺼번에 지운다 (데이터 화면에서 부른다) */
+async function revokeAll(ids){
+  const uid = uidNow();
+  if(!uid) return { ok: 0, fail: 0 };
+  const { m, s } = await storage();
+  let ok = 0, fail = 0;
+  for(const id of ids){
+    if(await stripToken(m, m.ref(s, path(uid, id)), id)) ok++; else fail++;
+  }
+  return { ok, fail };
+}
+
 /** 아직 못 올린 사진을 올린다. 로그인 직후에 부른다. */
 async function upload(id){
   const uid = uidNow();
@@ -107,7 +143,9 @@ async function upload(id){
     // SDK를 받아오는 것까지 감싼다. 네트워크가 없거나 버킷이 없으면 uploadBytes에
     // 닿기도 전에 터지는데, 그게 실제로 가장 흔한 실패다.
     const { m, s } = await storage();
-    await m.uploadBytes(m.ref(s, path(uid, id)), blob, { contentType: 'image/jpeg' });
+    const ref = m.ref(s, path(uid, id));
+    await m.uploadBytes(ref, blob, { contentType: 'image/jpeg' });
+    await stripToken(m, ref, id);
   }catch(e){
     setFail(e);
     throw e;
@@ -156,19 +194,12 @@ async function url(id){
       blob = await m.getBlob(ref);
       await idbSet('p:' + id, blob);
     }catch(e){
-      // 마지막 수단. 버킷 CORS가 이 도메인을 허용하지 않으면 getBlob이 막히는데,
-      // 그때 사진이 아예 안 보이는 것보다는 토큰 주소로라도 띄우는 쪽이 낫다.
-      // 다만 이건 주소를 화면에 박아 두는 길이라, 보이면 CORS부터 고쳐야 한다.
-      console.warn('[photos] getBlob 실패 — 토큰 주소로 띄웁니다. 버킷 CORS를 확인하세요:',
-        id, e.code || e.message);
-      try{
-        const href = await m.getDownloadURL(ref);
-        _urls.set(id, href);
-        return href;
-      }catch(e2){
-        console.warn('[photos] 받아오지 못했습니다:', id, e2.code || e2.message, path(uid, id));
-        return null;
-      }
+      // 예전에는 여기서 getDownloadURL로 물러섰다. 그걸 부르면 토큰이 새로
+      // 만들어져서, 지워둔 공개 주소가 되살아난다 — 막으려던 걸 스스로 다시
+      // 여는 셈이다. 그래서 물러서지 않는다. 안 보이면 CORS를 고쳐야 한다.
+      console.warn('[photos] 받아오지 못했습니다 — 버킷 CORS를 확인하세요:',
+        id, e.code || e.message, path(uid, id));
+      return null;
     }
   }
   const u = URL.createObjectURL(blob);
@@ -213,6 +244,6 @@ async function usage(){
   return { count: ids.length, bytes, pending: (await getPending()).length, quota, used };
 }
 
-window.DiaryPhotos = { add, url, remove, syncPending, usage, pendingCount, lastError, MAX_PX };
+window.DiaryPhotos = { add, url, remove, syncPending, usage, pendingCount, lastError, revokeAll, MAX_PX };
 // 늦게 뜬 사이에 그려진 썸네일을 채우라고 알린다 (지도와 같은 방식)
 if(typeof window.onPhotosReady === 'function') window.onPhotosReady();

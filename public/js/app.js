@@ -828,6 +828,53 @@ function medFormHtml(){
       `한 번에 고를 수 있어요.</p>`;
 }
 
+/**
+ * 기록에 들어 있는 사진 id 전부. 어떤 칸이 사진인지는 트랙 선언이 안다 —
+ * 배열이라고 다 사진이 아니다(식사 태그도 배열이다).
+ */
+function allPhotoIds(){
+  const keysOf = {};
+  DiaryTracks.all().forEach(t => {
+    const ks = (t.fields || []).filter(f => f.type === 'photo').map(f => f.key);
+    if(ks.length) keysOf[t.id] = ks;
+  });
+  const out = new Set();
+  for(const key of DiaryStore.monthKeys()){
+    const m = DiaryStore.getMonth(key, false);
+    if(!m) continue;
+    for(const ds in m.days){
+      const t = m.days[ds].t || {};
+      for(const id in t){
+        const ks = keysOf[id], v = t[id] && t[id].v;
+        if(!ks || !v) continue;
+        ks.forEach(k => (Array.isArray(v[k]) ? v[k] : []).forEach(p => out.add(p)));
+      }
+    }
+  }
+  return [...out];
+}
+
+/**
+ * 이미 올라간 사진들의 공개 주소를 폐기한다. 토큰이 붙은 주소는 로그인 없이
+ * 누구나 열리므로, 한 번 새면 영영 열린 문이 된다. 앞으로 올리는 사진은
+ * 올리자마자 지우지만, 그 전에 올린 것들은 손으로 한 번 돌려야 한다.
+ */
+async function revokePhotoLinks(){
+  const signedIn = !!(window.DiarySync && window.DiarySync.isSignedIn && window.DiarySync.isSignedIn());
+  if(!signedIn){ showToast('로그인한 다음에 할 수 있어요'); return; }
+  const ids = allPhotoIds();
+  if(!ids.length){ showToast('폐기할 사진이 없어요'); return; }
+  if(!confirm(`사진 ${fmtNum(ids.length)}장의 공개 주소를 폐기할까요?\n` +
+    '지금까지 새어 나간 주소가 있다면 그 자리에서 막힙니다.\n' +
+    '앱에서 보는 데는 영향이 없어요.')) return;
+  showToast('🔒 공개 주소 폐기 중…');
+  const r = await DiaryPhotos.revokeAll(ids).catch(() => ({ ok: 0, fail: ids.length }));
+  showToast(r.fail ? `🔒 ${fmtNum(r.ok)}장 폐기, ${fmtNum(r.fail)}장 실패`
+                   : `🔒 ${fmtNum(r.ok)}장의 공개 주소를 폐기했어요`);
+  await openManage();
+}
+window.revokePhotoLinks = revokePhotoLinks;
+
 async function onAddMed(){
   const name = $('med-name').value;
   const quick = String($('med-quick').value || '')
@@ -916,6 +963,10 @@ async function openManage(){
       `<div><span>기간</span><b>${s.first ? s.first + ' ~ ' + s.last : '—'}</b></div>` +
     `</div>` +
     `<div id="mg-photos"></div>` +
+    `<button class="btn" onclick="revokePhotoLinks()">사진 공개 주소 폐기</button>` +
+    `<p class="mg-note">사진은 로그인한 본인만 열 수 있지만, 예전에 만들어진 ` +
+      `<b>토큰 주소</b>는 로그인 없이도 열립니다. 눌러서 전부 막을 수 있어요. ` +
+      `앞으로 올리는 사진은 올리자마자 자동으로 막힙니다.</p>` +
     `<button class="btn danger" onclick="wipeRoutes()">가져온 경로 전체 삭제</button>` +
     `<p class="mg-note">일기와 사진은 지워지지 않아요. 타임라인을 다시 올리면 경로도 다시 채워집니다.</p>`;
   $('manage-modal').style.display = 'flex';
