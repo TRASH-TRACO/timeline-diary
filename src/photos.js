@@ -222,6 +222,22 @@ async function remove(id){
 }
 
 /**
+ * 기기에 있는 사진을 전부 다시 올린다.
+ *
+ * 클라우드 쪽을 비웠을 때 쓰는 복구용이다. 사진은 올라간 뒤에도 기기에 그대로
+ * 남아 있으므로, 버킷을 통째로 날려도 이 기기에서 다시 채워 넣을 수 있다.
+ * 하루 기록의 사진 id는 그대로라서, 올라가는 즉시 다른 기기에서도 다시 보인다.
+ *
+ * 화면에는 없다 — 평소에 쓸 일이 없다. 콘솔에서 DiaryPhotos.reuploadAll().
+ */
+async function reuploadAll(){
+  const ids = (await idbKeysWithPrefix('p:')).map(k => k.slice(2)).filter(Boolean);
+  if(!ids.length) return 0;
+  await setPending(ids);
+  return syncPending();
+}
+
+/**
  * 이 기기에 쌓인 사진 (데이터 화면용).
  * quota는 브라우저가 이 사이트에 내준 전체 몫이다 — 사진만의 몫이 아니고,
  * 브라우저마다 어림값이라 "대략 이만큼"으로만 쓴다.
@@ -244,6 +260,7 @@ async function usage(){
   return { count: ids.length, bytes, pending: (await getPending()).length, quota, used };
 }
 
-window.DiaryPhotos = { add, url, remove, syncPending, usage, pendingCount, lastError, revokeAll, MAX_PX };
+window.DiaryPhotos = { add, url, remove, syncPending, usage, pendingCount, lastError,
+  revokeAll, reuploadAll, MAX_PX };
 // 늦게 뜬 사이에 그려진 썸네일을 채우라고 알린다 (지도와 같은 방식)
 if(typeof window.onPhotosReady === 'function') window.onPhotosReady();

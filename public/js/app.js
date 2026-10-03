@@ -855,9 +855,12 @@ function allPhotoIds(){
 }
 
 /**
- * 이미 올라간 사진들의 공개 주소를 폐기한다. 토큰이 붙은 주소는 로그인 없이
- * 누구나 열리므로, 한 번 새면 영영 열린 문이 된다. 앞으로 올리는 사진은
- * 올리자마자 지우지만, 그 전에 올린 것들은 손으로 한 번 돌려야 한다.
+ * 이미 올라간 사진들의 공개 주소를 폐기한다.
+ *
+ * 화면에는 내놓지 않는다 — 앞으로 올리는 사진은 올리자마자 토큰을 지우므로,
+ * 이건 그 전에 올라간 것들을 한 번 정리하는 도구다. 평소에 쓸 일이 없는 버튼을
+ * 설정 화면에 세워 두면 그게 더 눈에 걸린다.
+ * 필요하면 콘솔에서 revokePhotoLinks()로 부른다.
  */
 async function revokePhotoLinks(){
   const signedIn = !!(window.DiarySync && window.DiarySync.isSignedIn && window.DiarySync.isSignedIn());
@@ -963,10 +966,6 @@ async function openManage(){
       `<div><span>기간</span><b>${s.first ? s.first + ' ~ ' + s.last : '—'}</b></div>` +
     `</div>` +
     `<div id="mg-photos"></div>` +
-    `<button class="btn" onclick="revokePhotoLinks()">사진 공개 주소 폐기</button>` +
-    `<p class="mg-note">사진은 로그인한 본인만 열 수 있지만, 예전에 만들어진 ` +
-      `<b>토큰 주소</b>는 로그인 없이도 열립니다. 눌러서 전부 막을 수 있어요. ` +
-      `앞으로 올리는 사진은 올리자마자 자동으로 막힙니다.</p>` +
     `<button class="btn danger" onclick="wipeRoutes()">가져온 경로 전체 삭제</button>` +
     `<p class="mg-note">일기와 사진은 지워지지 않아요. 타임라인을 다시 올리면 경로도 다시 채워집니다.</p>`;
   $('manage-modal').style.display = 'flex';
