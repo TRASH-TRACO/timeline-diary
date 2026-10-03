@@ -136,15 +136,26 @@ async function url(id){
   if(!blob){
     const uid = uidNow();
     if(!uid) return null;
+    let href = null;
     try{
       const { m, s } = await storage();
-      const href = await m.getDownloadURL(m.ref(s, path(uid, id)));
+      href = await m.getDownloadURL(m.ref(s, path(uid, id)));
+    }catch(e){
+      console.warn('[photos] 주소를 받지 못했습니다:', id, e.code || e.message, path(uid, id));
+      return null;
+    }
+    try{
       const res = await fetch(href);
+      if(!res.ok) throw new Error('HTTP ' + res.status);
       blob = await res.blob();
       await idbSet('p:' + id, blob);
     }catch(e){
-      console.warn('[photos] 받아오지 못했습니다:', id, e.code || e.message);
-      return null;
+      // 받아서 기기에 담는 데 실패해도 주소는 손에 있다. <img src="…">는 CORS를
+      // 타지 않으므로 버킷 설정이 어떻든 화면에는 뜬다 — 기기 캐시만 포기한다.
+      // 사진이 안 보이는 것보다 매번 받아오는 쪽이 낫다.
+      console.warn('[photos] 기기에 담지 못해 주소로 띄웁니다:', id, e.message);
+      _urls.set(id, href);
+      return href;
     }
   }
   const u = URL.createObjectURL(blob);
