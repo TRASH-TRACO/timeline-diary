@@ -85,15 +85,35 @@ async function add(file, opts){
   return id;
 }
 
+// 마지막 업로드 실패. 사진이 기기에만 쌓이고 있다는 걸 화면이 알아야 한다 —
+// 이걸 안 알리면 기기를 바꾸는 날에야 한꺼번에 잃은 걸 알게 된다.
+let _upFail = null;
+const lastError = () => _upFail;
+const pendingCount = async () => (await getPending()).length;
+function setFail(e){
+  const v = e ? (e.code || e.message || '업로드 실패') : null;
+  if(v === _upFail) return;
+  _upFail = v;
+  if(typeof window.onPhotoSyncChange === 'function') window.onPhotoSyncChange();
+}
+
 /** 아직 못 올린 사진을 올린다. 로그인 직후에 부른다. */
 async function upload(id){
   const uid = uidNow();
   if(!uid) return false;
   const blob = await idbGet('p:' + id);
   if(!blob){ await dropPending(id); return false; }
-  const { m, s } = await storage();
-  await m.uploadBytes(m.ref(s, path(uid, id)), blob, { contentType: 'image/jpeg' });
+  try{
+    // SDK를 받아오는 것까지 감싼다. 네트워크가 없거나 버킷이 없으면 uploadBytes에
+    // 닿기도 전에 터지는데, 그게 실제로 가장 흔한 실패다.
+    const { m, s } = await storage();
+    await m.uploadBytes(m.ref(s, path(uid, id)), blob, { contentType: 'image/jpeg' });
+  }catch(e){
+    setFail(e);
+    throw e;
+  }
   await dropPending(id);
+  setFail(null);
   return true;
 }
 async function syncPending(){
@@ -103,6 +123,7 @@ async function syncPending(){
     try{ if(await upload(id)) n++; }
     catch(e){ console.warn('[photos] 업로드 실패:', id, e.code || e.message); break; }
   }
+  if(typeof window.onPhotoSyncChange === 'function') window.onPhotoSyncChange();
   return n;
 }
 
@@ -168,6 +189,6 @@ async function usage(){
   return { count: ids.length, bytes, pending: (await getPending()).length, quota, used };
 }
 
-window.DiaryPhotos = { add, url, remove, syncPending, usage, MAX_PX };
+window.DiaryPhotos = { add, url, remove, syncPending, usage, pendingCount, lastError, MAX_PX };
 // 늦게 뜬 사이에 그려진 썸네일을 채우라고 알린다 (지도와 같은 방식)
 if(typeof window.onPhotosReady === 'function') window.onPhotosReady();

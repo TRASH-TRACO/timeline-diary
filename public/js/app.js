@@ -51,8 +51,42 @@ function refreshLocalNote(){
   const s = DiaryStore.stats();
   el.hidden = signedIn || (s.routes === 0 && s.notes === 0);
 }
+/**
+ * 사진이 계정으로 못 가고 있을 때 알린다.
+ *
+ * 올리기 실패는 원래 console.warn에만 남았다. 데이터 화면에 숫자는 있었지만
+ * 그건 "문제가 생겼다"로 읽히지 않는다 — 실제로 몇 주가 지나서야 다른 기기에
+ * 사진이 없는 걸로 알아챘다. 기기에만 쌓인 사진은 기기를 바꾸는 날 사라진다.
+ */
+async function refreshPhotoNote(){
+  const el = $('photo-note');
+  if(!el) return;
+  const signedIn = !!(window.DiarySync && window.DiarySync.isSignedIn && window.DiarySync.isSignedIn());
+  const P = window.DiaryPhotos;
+  if(!P || !signedIn || !P.lastError()){ el.hidden = true; return; }
+  const n = await P.pendingCount();
+  if(!n){ el.hidden = true; return; }
+  $('photo-note-n').textContent = fmtNum(n);
+  // 원인은 그대로 보여준다 — 이 앱은 쓰는 사람이 곧 고치는 사람이다.
+  // 다만 SDK가 뱉는 문장이 길어서 한 줄로 자른다.
+  const why = $('photo-note-why');
+  const msg = String(P.lastError());
+  if(why) why.textContent = '(' + (msg.length > 70 ? msg.slice(0, 70) + '…' : msg) + ')';
+  el.hidden = false;
+}
+window.onPhotoSyncChange = () => { refreshPhotoNote(); };
+
+async function retryPhotoSync(){
+  if(!window.DiaryPhotos) return;
+  showToast('📷 다시 올려보는 중…');
+  const n = await DiaryPhotos.syncPending().catch(() => 0);
+  showToast(n ? `📷 사진 ${fmtNum(n)}장을 올렸어요` : '아직 올리지 못했어요');
+  refreshPhotoNote();
+}
+window.retryPhotoSync = retryPhotoSync;
+
 // 로그인 상태가 바뀌면 동기화 모듈이 불러준다
-window.onAuthChange = () => { refreshLocalNote(); };
+window.onAuthChange = () => { refreshLocalNote(); refreshPhotoNote(); };
 
 // ── 캘린더 ──────────────────────────────────
 function shiftMonth(delta){
@@ -189,7 +223,7 @@ try{ const v = localStorage.getItem('diary_dayview'); if(v === 'map' || v === 's
 /** 지도 모듈은 module script라 classic script보다 늦게 뜬다. 늦게 떠도 화면을 맞춘다. */
 window.onMapReady = () => { if(dayView === 'map') renderRouteArea(); };
 /** 사진 모듈도 마찬가지 — 뜨면 비어 있던 썸네일을 채운다 */
-window.onPhotosReady = () => { if(!isEditingPanel()) renderPanel(); };
+window.onPhotosReady = () => { if(!isEditingPanel()) renderPanel(); refreshPhotoNote(); };
 
 function setDayView(v){
   if(dayView === v) return;
@@ -978,6 +1012,7 @@ async function init(){
   wireImport();
   applyEntryGate();
   refreshLocalNote();
+  refreshPhotoNote();
 
   // 동기화로 데이터가 들어오면 화면을 맞춘다 (입력 중인 칸은 건드리지 않는다)
   DiaryStore.onChange(what => {
