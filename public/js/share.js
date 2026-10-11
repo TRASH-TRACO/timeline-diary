@@ -238,7 +238,50 @@ function toMarkdown(days, spec, opts){
   return L.join('\n');
 }
 
+/**
+ * 공개본에 쓰인 id들이 무슨 뜻인지 적은 사전.
+ *
+ * 저장은 id로 한다 — 'med:mmut7897a1btp'는 이름을 바꿔도 안 변하는 유일한
+ * 이름이라 키로 쓰기에 맞다. 문제는 그 파일을 열어 본 사람(이나 AI)에게는
+ * 아무 뜻이 없다는 것이다. 키는 그대로 두고 뜻을 따로 적는다.
+ *
+ * 실제로 나간 트랙·필드만 적는다. 안 내보내기로 한 트랙을 사전에 적어 두면
+ * "이 사람이 그걸 기록하고 있다"는 사실이 새어 나간다.
+ */
+function legend(days){
+  const used = {};
+  for(const ds in days){
+    for(const id in (days[ds].t || {})){
+      (used[id] || (used[id] = new Set()));
+      Object.keys(days[ds].t[id]).forEach(k => used[id].add(k));
+    }
+  }
+  const out = {};
+  for(const id in used){
+    const t = DiaryTracks.trackById(id);
+    if(!t) continue;
+    const e = { name: t.name, icon: t.icon };
+    const fields = {};
+    for(const k of used[id]){
+      const f = (t.fields || []).find(x => x.key === k);
+      if(!f){ fields[k] = { label: k }; continue; }
+      const d = { label: f.label };
+      if(f.unit) d.unit = f.unit;
+      if(f.type === 'bool' || f.type === 'photo' || f.type === 'tags') d.type = f.type;
+      // 눈금은 숫자만 봐서는 못 읽는다 — 2가 뭔지 같이 적어 준다
+      if(f.type === 'choice' && f.options){
+        d.options = {};
+        f.options.forEach(o => { d.options[o.v] = o.desc || o.name; });
+      }
+      fields[k] = d;
+    }
+    if(Object.keys(fields).length) e.fields = fields;
+    out[id] = e;
+  }
+  return out;
+}
+
 window.DiaryShare = {
-  redactRoute, routeSummary, projectDay, previewShare, toMarkdown,
+  redactRoute, routeSummary, projectDay, previewShare, toMarkdown, legend,
   HOME_RADIUS, HOME_NAMES,
 };

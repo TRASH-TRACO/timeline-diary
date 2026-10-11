@@ -765,6 +765,9 @@ function exportShare(){
     v: 1, kind: 'timeline-diary-share',
     from: _shareSpec.from, to: _shareSpec.to,
     madeAt: new Date().toISOString(),
+    // 키는 id로 둔다(이름을 바꿔도 안 변한다). 대신 그 id가 무슨 뜻인지
+    // 사전을 같이 넣는다 — 'med:mmut7897a1btp'만 보고는 아무도 못 읽는다.
+    tracks: DiaryShare.legend(days),
     spec, days,
   }, null, 1)], { type: 'application/json' });
   downloadBlob(blob, `diary-${_shareSpec.from}_${_shareSpec.to}.json`);
