@@ -623,22 +623,59 @@ function openShare(){
   refreshShare();
 }
 
-/** 트랙 목록만 다시 그린다 — 날짜 칸은 건드리지 않는다 */
+/**
+ * 트랙 목록만 다시 그린다 — 날짜 칸은 건드리지 않는다.
+ *
+ * 담을지 말지는 체크박스다. 드롭다운으로 받으면 트랙 하나를 빼는 데도 열고·찾고·
+ * 고르는 세 걸음이 든다. 실제로 자주 하는 일은 "이건 빼고 이건 넣고"지
+ * "이건 사진까지, 저건 메모까지"가 아니다.
+ *
+ * 얼마나 담을지(공개 수준)는 담기로 한 트랙에만, 그것도 고를 게 둘 이상일 때만
+ * 칩으로 내놓는다. 수분 섭취처럼 수준이 하나뿐인 트랙에 선택지를 그려 봐야
+ * 고를 것도 없는 줄만 늘어난다.
+ */
 function renderShareTracks(){
-  $('sh-tracks').innerHTML = DiaryTracks.all().map(t => {
+  $('sh-tracks').innerHTML = DiaryTracks.all().map((t, i) => {
     const levels = t.share || [];
     if(!levels.length) return '';
     const cur = _shareSpec.tracks[t.id] || '';
-    const opts = [`<option value="">담지 않음</option>`].concat(levels.map(l =>
-      `<option value="${l.id}"${cur === l.id ? ' selected' : ''}>${escapeHtml(l.name)}</option>`)).join('');
     const lv = levels.find(l => l.id === cur);
-    return `<div class="sh-track">` +
-      `<span class="sh-track-ico">${t.icon}</span>` +
-      `<span class="sh-track-nm">${escapeHtml(t.name)}</span>` +
-      `<select class="sh-sel" data-track="${t.id}" onchange="setShareLevel('${t.id}', this.value)">${opts}</select>` +
-      `<div class="sh-track-d">${lv ? escapeHtml(lv.desc || lv.name) : '이 트랙은 내보내지 않습니다'}</div>` +
+    const cid = 'sht-' + i;
+    const chips = (lv && levels.length > 1)
+      ? `<div class="sh-levels">` + levels.map(l =>
+          `<button type="button" class="sh-lv${l.id === cur ? ' on' : ''}${l.sensitive ? ' warn' : ''}" ` +
+            `onclick="setShareLevel('${t.id}', '${l.id}')" ` +
+            `title="${escapeHtml(l.desc || l.name)}">${l.sensitive ? '⚠️ ' : ''}${escapeHtml(l.name)}</button>`
+        ).join('') + `</div>`
+      : '';
+    return `<div class="sh-track${lv ? ' on' : ''}">` +
+      `<input type="checkbox" id="${cid}" ${lv ? 'checked' : ''} ` +
+        `onchange="toggleShareTrack('${t.id}', this.checked)">` +
+      `<label class="sh-track-lb" for="${cid}">` +
+        `<span class="sh-track-ico">${t.icon}</span>` +
+        `<span class="sh-track-nm">${escapeHtml(t.name)}</span>` +
+      `</label>` +
+      chips +
+      // 고른 칩이 이미 이름을 말하고 있다. 설명은 이름만으로 모자랄 때만 — 대개
+      // 민감한 수준이 무엇을 딸려 보내는지 적어 둔 자리다.
+      (lv && lv.desc ? `<div class="sh-track-d">${escapeHtml(lv.desc)}</div>` : '') +
     `</div>`;
   }).join('');
+}
+
+/**
+ * 담을지 말지.
+ *
+ * 켤 때 고르는 수준은 언제나 추천(= 민감하지 않은 쪽)이다. 지난번에 '사진까지'를
+ * 골랐다는 이유로 체크 한 번에 사진이 딸려 나가면 안 된다 — 민감한 쪽으로 가는
+ * 건 언제나 손으로 한 번 더 눌러야 한다.
+ */
+function toggleShareTrack(id, on){
+  readShareRange();
+  const lv = on ? DiaryTracks.defaultShareLevel(DiaryTracks.trackById(id)) : null;
+  _shareSpec.tracks[id] = lv ? lv.id : '';
+  renderShareTracks();
+  refreshShare();
 }
 function closeShare(){ $('share-modal').style.display = 'none'; }
 function setShareLevel(id, level){
@@ -835,6 +872,7 @@ function exportShareMd(){
 window.openShare = openShare;
 window.closeShare = closeShare;
 window.setShareLevel = setShareLevel;
+window.toggleShareTrack = toggleShareTrack;
 window.shareAll = shareAll;
 window.sharePreset = sharePreset;
 window.refreshShare = refreshShare;
