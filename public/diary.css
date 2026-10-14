@@ -361,6 +361,41 @@ code{font-family:var(--font-mono);font-size:.92em;background:var(--bg3);padding:
 .tf-bool:hover{background:var(--bg3);color:var(--text);}
 .tf-bool.on{background:var(--accent-bg);border-color:var(--accent);color:var(--accent);font-weight:600;}
 
+/* 사건 목록 (변처럼 하루에 몇 번이고 생기는 것) */
+/* 한 칸이 어디서 끝나는지가 눈에 보여야 한다. 칸 여럿이 같은 종류의 입력을
+   줄줄이 세우고 있어서, 테두리가 없으면 어느 모양이 어느 변의 것인지 헷갈린다 */
+.tf-ev-top{display:flex;align-items:baseline;gap:8px;}
+.tf-ev-n{margin-left:auto;font-size:11px;font-weight:600;color:var(--accent);
+  font-family:var(--font-mono);}
+.tf-evs:not(:empty){display:flex;flex-direction:column;gap:8px;margin-bottom:8px;}
+.tf-ev{border:1px solid var(--border);border-radius:var(--r2);background:var(--bg2);
+  padding:10px 12px 12px;}
+.tf-ev-hdr{display:flex;align-items:center;gap:8px;}
+.tf-ev-no{font-size:11px;font-weight:600;color:var(--text3);font-family:var(--font-mono);flex:none;}
+.tf-ev-at{padding:4px 7px;font-size:13px;font-family:var(--font-mono);flex:none;
+  border:1px solid var(--border);border-radius:var(--r2);background:var(--bg);color:var(--text);}
+.tf-ev-at:focus{outline:none;border-color:var(--accent);}
+/* 접힌 줄 — 적은 것이 그대로 요약으로 남아서, 펴지 않고도 훑을 수 있다 */
+.tf-ev-open{display:flex;align-items:center;gap:6px;flex:1;min-width:0;padding:4px 2px;
+  border:none;background:transparent;color:var(--text2);font-size:12px;text-align:left;cursor:pointer;}
+.tf-ev-sum{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.tf-ev-sum.dim{color:var(--text3);}
+.tf-ev-caret{flex:none;font-size:11px;line-height:1;color:var(--text3);transition:transform .15s;}
+.tf-ev.open .tf-ev-caret{transform:rotate(180deg);}
+.tf-ev-body{display:none;margin-top:4px;}
+.tf-ev.open .tf-ev-body{display:block;}
+/* 펴 놓은 칸에서는 요약이 아래 내용과 겹쳐 읽힌다 */
+.tf-ev.open .tf-ev-sum{visibility:hidden;}
+.tf-ev-x{width:22px;height:22px;padding:0;flex:none;line-height:1;font-size:10px;
+  cursor:pointer;border:1px solid transparent;border-radius:var(--r2);background:transparent;
+  color:var(--text3);opacity:.5;transition:all .12s;}
+.tf-ev-x:hover{opacity:1;border-color:var(--border2);background:var(--bg3);color:var(--text);}
+.tf-ev-add{padding:7px 14px;font-size:12px;font-weight:600;border-radius:100px;cursor:pointer;
+  transition:all .12s;border:1px dashed var(--border2);background:var(--bg);color:var(--text2);}
+.tf-ev-add:hover{border-style:solid;border-color:var(--accent);background:var(--accent-bg);color:var(--accent);}
+.tf-ev-none{display:none;margin-top:7px;font-size:11px;color:var(--text3);}
+.tf[data-type="events"].empty .tf-ev-none{display:block;}
+
 /* 사진 */
 /* 짧은 칸이 여럿일 때(부위별 사진) 나란히 세운다 — 세로로만 쌓으면 오른쪽이
    통째로 비고, 칸 넷이 화면 한 장을 다 먹는다 */
@@ -493,6 +528,8 @@ code{font-family:var(--font-mono);font-size:.92em;background:var(--bg3);padding:
 .sh-row b{color:var(--text);font-weight:600;text-align:right;}
 .sh-row.note b{font-weight:400;line-height:1.6;}
 .sh-row.dim b{color:var(--text3);font-weight:400;}
+/* 사건 하나하나 — 목록 줄 밑에 들여쓴다 */
+.sh-row.sub{padding:4px 0 4px 14px;border-top:none;font-size:11px;color:var(--text3);}
 
 .sh-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;
   margin-top:16px;padding-top:14px;border-top:1px solid var(--border);flex-wrap:wrap;}
@@ -588,9 +625,9 @@ code{font-family:var(--font-mono);font-size:.92em;background:var(--bg3);padding:
  * 푼다. 데스크톱은 지금 크기가 맞으니 터치 기기에서만 적용한다.
  */
 @media (pointer: coarse){
-  .tf-input,.tf-text,.tf-tag-in,.tf-cnt-v,.pn-note-input,.mg-med input,.sh-range input,
-  .sh-sel{font-size:16px;}
-  .tf-add{padding:9px 16px;}
+  .tf-input,.tf-text,.tf-tag-in,.tf-cnt-v,.tf-ev-at,.pn-note-input,.mg-med input,
+  .sh-range input,.sh-sel{font-size:16px;}
+  .tf-add,.tf-ev-add{padding:9px 16px;}
   .sh-sel{max-width:180px;}
   /* 같은 화면에서 손가락으로 누르는 것들도 조금 키운다 */
   .tf-tag{font-size:13px;}

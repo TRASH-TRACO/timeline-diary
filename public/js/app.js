@@ -306,7 +306,9 @@ function renderPanel(){
         // 트랙이 폼 밑에 한 줄 더 붙이고 싶을 때 (식사의 '7일 N가지')
         (t.foot ? `<div class="pn-track-foot" id="tfoot-${t.id}"></div>` : '');
     }else return;
-    html += `<section class="pn-track" data-track="${t.id}">` +
+    // data-ds를 적어 둔다 — 폼이 "이 기록은 어느 날의 것인가"를 알아야 하는
+    // 경우가 있다(사건을 더할 때 시간을 지금으로 채울지)
+    html += `<section class="pn-track" data-track="${t.id}" data-ds="${selDate}">` +
       `<div class="pn-track-hdr"><span class="pn-track-ico">${t.icon}</span>` +
         `<span class="pn-track-nm">${escapeHtml(t.name)}</span>` +
         `<span class="pn-track-saved" id="tsaved-${t.id}"></span>${tools}</div>` +
@@ -744,6 +746,16 @@ function renderShareSample(ds, pub){
     for(const k in v){
       const f = (t.fields || []).find(x => x.key === k);
       const label = f ? f.label : k;
+      // 사건 목록은 한 줄로 뭉개지 않는다 — 미리보기의 할 일은 "이게 전부입니다"를
+      // 보이는 것이고, 하나하나에 적은 메모가 나가는지는 그 줄을 봐야 안다.
+      if(f && f.type === 'events'){
+        const lines = DiaryShare.mdEvents(f, v[k]);
+        body.innerHTML += `<div class="sh-row"><span>${t.icon} ${escapeHtml(label)}</span>` +
+          `<b>${escapeHtml(DiaryTracks.fieldText(f, v[k]))}</b></div>` +
+          lines.slice(1).map(l =>
+            `<div class="sh-row sub"><span>${escapeHtml(l.trim().replace(/^- /, ''))}</span></div>`).join('');
+        continue;
+      }
       body.innerHTML += `<div class="sh-row"><span>${t.icon} ${escapeHtml(label)}</span>` +
         `<b>${escapeHtml(DiaryTracks.fieldText(f, v[k]))}</b></div>`;
     }
@@ -833,14 +845,10 @@ function medFormHtml(){
 
 /**
  * 기록에 들어 있는 사진 id 전부. 어떤 칸이 사진인지는 트랙 선언이 안다 —
- * 배열이라고 다 사진이 아니다(식사 태그도 배열이다).
+ * 배열이라고 다 사진이 아니고(식사 태그도 배열이다), 사진이 사건 하나하나에
+ * 붙어 있을 수도 있다(변마다 찍은 사진).
  */
 function allPhotoIds(){
-  const keysOf = {};
-  DiaryTracks.all().forEach(t => {
-    const ks = (t.fields || []).filter(f => f.type === 'photo').map(f => f.key);
-    if(ks.length) keysOf[t.id] = ks;
-  });
   const out = new Set();
   for(const key of DiaryStore.monthKeys()){
     const m = DiaryStore.getMonth(key, false);
@@ -848,9 +856,9 @@ function allPhotoIds(){
     for(const ds in m.days){
       const t = m.days[ds].t || {};
       for(const id in t){
-        const ks = keysOf[id], v = t[id] && t[id].v;
-        if(!ks || !v) continue;
-        ks.forEach(k => (Array.isArray(v[k]) ? v[k] : []).forEach(p => out.add(p)));
+        const v = t[id] && t[id].v;
+        if(!v) continue;
+        DiaryTracks.photoIdsIn(DiaryTracks.trackById(id), v).forEach(p => out.add(p));
       }
     }
   }

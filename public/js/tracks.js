@@ -6,11 +6,12 @@
 //   이동 경로  → 구글 타임라인을 받아 → 경로 애니메이션
 //   이소티논   → 그날 먹은 양 → 짧은 기록
 //   식사       → 아침·점심·저녁·간식
-//   변 상태    → 횟수와 모양
+//   변         → 볼 때마다 하나씩
 // 그래서 "무엇을 기록하는가"를 선언으로 적고, 화면은 그 선언을 보고 그린다.
 //
 // 필드 타입이 곧 콘텐츠 계층이다. number·text·photo에 choice(여럿 중 하나)와
-// bool(그랬다/아니다)이 더해졌다.
+// bool(그랬다/아니다), counter(더해 가는 것), events(하루에 몇 번이고 생기는 것)가
+// 더해졌다. events 안쪽은 다시 같은 선언 언어로 적는다 — 칸 종류가 두 벌이 되지 않게.
 //
 // 전용 화면이 필요한 트랙은 view를 준다(경로가 그렇다). 나머지는 fields만 적으면
 // 기본 폼이 알아서 그려진다.
@@ -153,6 +154,115 @@ const SKIN_AREAS = [
 // 채우는 눈금으로만 쓰고, 못 채웠다고 뭐라 하지는 않는다.
 const WATER_GOAL = 2000;
 const fmtMl = ml => (ml >= 1000 ? (ml / 1000).toFixed(ml % 1000 ? 1 : 0) + 'L' : ml + 'ml');
+
+// ── 사건 목록 (events) ──────────────────────
+// 하루에 한 번뿐인 것(복용량)과 하루에 몇 번이고 있는 것(변)은 같은 칸으로 받을 수
+// 없다. 횟수만 숫자로 받으면 "세 번 중 어느 것이 4형이었나"가 기록에서 사라진다.
+// 그래서 하나씩 더하고, 하나하나에 시간과 제 기록을 붙인다.
+//
+// 시간은 'HH:MM' 문자열로 둔다. 날짜는 이미 이 기록이 걸린 날이고, 시간대까지
+// 적으면 기기를 옮겨 다닐 때마다 같은 아침이 다른 시각이 된다.
+const EV_AT = { key: 'at', type: 'text', label: '시간' };
+/** 사건 한 칸의 하위 칸 선언 찾기 (시간은 타입이 늘 갖고 있다) */
+const evField = (f, k) => (k === EV_AT.key ? EV_AT : ((f && f.fields) || []).find(x => x.key === k) || null);
+/**
+ * 시간순. 시간을 안 적은 건 뒤로 — 언제인지 모르는 걸 아침으로 올려 세울 수는 없다.
+ */
+const evOrder = (a, b) => (a.at ? (b.at ? (a.at < b.at ? -1 : a.at > b.at ? 1 : 0) : -1)
+                                : (b.at ? 1 : 0));
+/**
+ * 이 칸의 사건 목록. 예전 모양으로 적힌 날도 같은 목록으로 읽힌다 —
+ * 저장된 값은 그대로 두고, 읽는 자리에서만 옮긴다(f.legacy).
+ */
+function eventsOf(f, v){
+  if(!v) return [];
+  if(Array.isArray(v[f.key])) return v[f.key];
+  return (typeof f.legacy === 'function' ? f.legacy(v) : null) || [];
+}
+/**
+ * 이 트랙 값에 들어 있는 사진 id들.
+ *
+ * 어떤 칸이 사진인지는 선언이 안다 — 배열이라고 다 사진이 아니고(식사 태그도
+ * 배열이다), 사진이 사건 하나하나에 붙어 있을 수도 있다(변마다 찍은 사진).
+ * 예전 모양은 옮기지 않고 저장된 대로 훑는다. legacy로 펴면 같은 사진이
+ * 두 번 세어진다 — 예전 칸도 선언에 남아 있으니까.
+ */
+function photoIdsIn(track, v){
+  const out = [];
+  if(!track || !v) return out;
+  const take = (o, key) => (Array.isArray(o[key]) ? o[key] : [])
+    .forEach(x => { if(typeof x === 'string' && x) out.push(x); });
+  for(const f of track.fields || []){
+    if(f.type === 'photo') take(v, f.key);
+    else if(f.type === 'events'){
+      (Array.isArray(v[f.key]) ? v[f.key] : []).forEach(ev => {
+        if(ev && typeof ev === 'object') (f.fields || []).forEach(sf => {
+          if(sf.type === 'photo') take(ev, sf.key);
+        });
+      });
+    }
+  }
+  return out;
+}
+
+// ── 변 ──────────────────────────────────────
+// 하나하나에 붙는 기록. 피·점액·통증을 한 칸에 묶어 두면 "피는 아닌데 점액만"을
+// 적을 데가 없고, 나중에 어느 쪽이었는지도 알 수 없다.
+const STOOL_EV = [
+  { key: 'type', type: 'choice', label: '모양 (브리스톨 척도)', options: BRISTOL,
+    hint: '1에 가까울수록 단단하고, 7에 가까울수록 묽습니다',
+    brief: '형' },                       // 접힌 줄에서는 '4'가 아니라 '4형'
+  { key: 'blood', type: 'bool', label: '🩸 피',   narrow: true },
+  { key: 'mucus', type: 'bool', label: '🫧 점액', narrow: true },
+  { key: 'pain',  type: 'bool', label: '😖 통증', narrow: true },
+  // 말로 옮기기 어려운 건 찍어두는 게 낫다. 진료실에서 "그때 그랬어요"보다
+  // 그날 사진 한 장이 할 말이 많다.
+  { key: 'photos', type: 'photo', label: '사진', max: 2 },
+  { key: 'note', type: 'text', label: '메모', max: 200, rows: 1,
+    placeholder: '복통·불편감 같은 걸 짧게' },
+];
+
+const STOOL_LOG = {
+  key: 'log', type: 'events', label: '이 날 본 변', item: '변', add: '변 추가',
+  unit: '회', max: 20, fields: STOOL_EV,
+  /**
+   * 예전 기록을 같은 목록으로 읽는다.
+   *
+   * 예전에는 하루 한 줄이었다 — '3회 · 4형 · 메모 하나'. 그걸 사건 셋으로 펴면서
+   * 아는 것은 첫 칸에 적고 나머지는 빈 칸으로 둔다. '3회'라는 말은 애초에
+   * "세 번 있었다"였으니, 빈 칸 둘은 없는 사실을 지어내는 게 아니라 그 말을
+   * 그대로 옮긴 것이다.
+   *
+   * 저장된 값은 건드리지 않는다. 그 날을 고쳐 적는 순간에 비로소 새 모양으로
+   * 쓰이고, 그때까지 예전 기록은 예전 모양으로 남아 있다.
+   */
+  legacy(v){
+    const one = {};
+    if(v.type != null) one.type = v.type;
+    // 예전에는 '피나 점액'을 한 칸에 묻었다. 둘 중 어느 쪽이었는지 알 수 없으니
+    // 피로 둔다 — 없는 구분을 지어내지 않는다.
+    if(v.blood) one.blood = true;
+    if(Array.isArray(v.photos) && v.photos.length) one.photos = v.photos.slice();
+    if(v.note) one.note = v.note;
+    const has = Object.keys(one).length > 0;
+    const n = Math.min(20, Math.max(+v.count > 0 ? Math.round(+v.count) : 0, has ? 1 : 0));
+    const out = [];
+    for(let i = 0; i < n; i++) out.push(i === 0 && has ? { at: '', ...one } : { at: '' });
+    return out;
+  },
+};
+
+const stoolLog = v => eventsOf(STOOL_LOG, v);
+/** 그날 몇 번. 새 기록은 더한 개수가, 예전 기록은 적어 둔 숫자가 답이다. */
+function stoolCount(v){
+  if(!v) return null;
+  if(Array.isArray(v.log)) return v.log.length;
+  return v.count != null ? v.count : null;
+}
+// 공개 수준 — 사진과 메모는 따로 둔다. '모양까지'를 골랐다는 이유로 딸려 나가면
+// 안 된다. 예전 모양으로 적힌 날도 같이 나가야 하니 예전 칸(type·blood…)도 적는다.
+const ST_SHAPE = ['count', 'log.at', 'log.type', 'log.blood', 'log.mucus', 'log.pain',
+                  'type', 'blood'];
 
 const TRACKS = [
   {
@@ -331,57 +441,70 @@ const TRACKS = [
   },
   {
     id: 'stool',
-    name: '변 상태',
+    name: '변',
     icon: '🚽',
-    desc: '횟수와 모양을 남깁니다',
+    desc: '볼 때마다 하나씩 더하면 횟수는 세어 줍니다',
     fields: [
-      { key: 'count', type: 'number', label: '횟수', unit: '회',
-        min: 0, max: 20, step: 1, quick: [0, 1, 2, 3] },
-      { key: 'type', type: 'choice', label: '모양 (브리스톨 척도)', options: BRISTOL,
-        hint: '1에 가까울수록 단단하고, 7에 가까울수록 묽습니다' },
-      // 이소티논을 비롯해 장을 건드리는 약을 먹는 동안에는 이게 병원에 가야 할
-      // 신호일 수 있다. 메모에 묻히지 않게 따로 둔다.
-      { key: 'blood', type: 'bool', label: '🩸 피나 점액이 섞였다' },
-      // 말로 옮기기 어려운 건 찍어두는 게 낫다. 진료실에서 "그때 그랬어요"보다
-      // 그날 사진 한 장이 할 말이 많다.
-      { key: 'photos', type: 'photo', label: '사진', max: 3 },
-      { key: 'note', type: 'text', label: '메모', max: 200,
-        placeholder: '복통·불편감 같은 걸 짧게' },
+      STOOL_LOG,
+      // 아래는 예전 기록(하루 한 줄)을 읽기 위한 선언이다. 폼에는 나오지 않지만
+      // 공개본·Markdown·사전이 라벨과 눈금을 찾을 자리가 있어야 한다.
+      // count만은 지금도 쓰인다 — 더한 개수를 그때그때 같이 적어 두는 숫자다.
+      { key: 'count', type: 'number', label: '횟수', unit: '회', hidden: true },
+      { key: 'type', type: 'choice', label: '모양 (브리스톨 척도)', options: BRISTOL, hidden: true },
+      { key: 'blood', type: 'bool', label: '🩸 피나 점액이 섞였다', hidden: true },
+      { key: 'photos', type: 'photo', label: '사진', hidden: true },
+      { key: 'note', type: 'text', label: '메모', hidden: true },
     ],
+    /**
+     * 총 횟수는 사람이 세지 않는다 — 더한 개수가 그대로 횟수다.
+     *
+     * 파생값인데도 저장해 둔다. 캘린더 배지·월 요약·공개본이 전부 이 숫자를 보고
+     * 있고, 무엇보다 다른 기기에 아직 예전 앱이 떠 있어도 '3회'는 읽힌다.
+     */
+    derive: v => (Array.isArray(v.log) ? { ...v, count: v.log.length } : v),
     cell(v){
       if(!v) return null;
+      const n = stoolCount(v);
+      const log = stoolLog(v);
       const bits = [];
-      if(v.count != null) bits.push(v.count + '회');
-      if(v.type != null)  bits.push(v.type + '형');
+      if(n != null) bits.push(n + '회');
+      // 그날 나온 모양들 — 하루에 4형과 6형이 섞이는 날이 실제로 있다
+      const ts = [...new Set(log.map(e => e.type).filter(x => x != null))].sort();
+      if(ts.length) bits.push(ts.slice(0, 2).join('/') + (ts.length > 2 ? '…' : '') + '형');
       if(bits.length) return { badge: bits.join('·') };
       // 사진만 남긴 날도 캘린더에 흔적이 있어야 한다 — 적었는데 아무것도 안 보이면
       // 기록이 안 된 줄 안다
-      return (v.photos || []).length ? { badge: '사진' } : null;
+      const shots = (v.photos || []).length + log.reduce((s, e) => s + (e.photos || []).length, 0);
+      return shots ? { badge: '사진' } : null;
     },
-    // 사진은 따로 둔다. 이 앱에서 가장 민감한 내용이라, '메모까지'를 골랐다는
-    // 이유로 딸려 나가면 안 된다.
     share: [
       { id: 'count', name: '횟수만', fields: ['count'], recommended: true },
-      { id: 'shape', name: '횟수 + 모양', fields: ['count', 'type', 'blood'] },
-      { id: 'all', name: '메모까지', fields: ['count', 'type', 'blood', 'note'],
+      { id: 'shape', name: '횟수 + 모양', fields: ST_SHAPE },
+      { id: 'all', name: '메모까지', fields: ST_SHAPE.concat(['log.note', 'note']),
         sensitive: true, desc: '메모에 적은 증상이 함께 나갑니다' },
-      { id: 'photo', name: '사진까지', fields: ['count', 'type', 'blood', 'note', 'photos'],
+      { id: 'photo', name: '사진까지',
+        fields: ST_SHAPE.concat(['log.note', 'note', 'log.photos', 'photos']),
         sensitive: true, desc: '변 사진이 함께 나갑니다' },
     ],
     summary(entries){
-      const days = entries.filter(e => e.v &&
-        (e.v.count != null || e.v.type != null || (e.v.photos || []).length));
+      const days = entries.filter(e => e.v && (stoolCount(e.v) != null || stoolLog(e.v).length));
       if(!days.length) return null;
-      const counted = days.filter(e => e.v.count != null);
+      const total = days.reduce((s, e) => s + (stoolCount(e.v) || 0), 0);
       const rows = [{ k: '변 기록', v: days.length + '일' }];
-      if(counted.length){
-        const avg = counted.reduce((s, e) => s + e.v.count, 0) / counted.length;
-        rows.push({ k: '하루 평균', v: avg.toFixed(1).replace(/\.0$/, '') + '회' });
-      }
-      const hard = days.filter(e => e.v.type <= 2).length;
-      const soft = days.filter(e => e.v.type >= 6).length;
-      if(hard) rows.push({ k: '단단한 변', v: hard + '일' });
-      if(soft) rows.push({ k: '무른 변', v: soft + '일' });
+      if(total) rows.push({ k: '하루 평균', v: (total / days.length).toFixed(1).replace(/\.0$/, '') + '회' });
+      // 모양과 증상은 '며칠'이 아니라 '몇 번'으로 센다. 하루에 세 번 묽었으면
+      // 그건 하루가 아니라 세 번이다 — 그 차이가 바로 이 모양으로 바꾼 이유다.
+      let hard = 0, soft = 0, blood = 0, pain = 0;
+      days.forEach(e => stoolLog(e.v).forEach(x => {
+        if(x.type <= 2) hard++;
+        if(x.type >= 6) soft++;
+        if(x.blood || x.mucus) blood++;
+        if(x.pain) pain++;
+      }));
+      if(hard)  rows.push({ k: '단단한 변', v: hard + '번' });
+      if(soft)  rows.push({ k: '무른 변', v: soft + '번' });
+      if(blood) rows.push({ k: '피·점액', v: blood + '번' });
+      if(pain)  rows.push({ k: '통증', v: pain + '번' });
       return rows;
     },
   },
@@ -570,6 +693,8 @@ async function migrateDefaults(){
 function fieldsHtml(track, val){
   const v = val || {};
   return track.fields.map(f => {
+    // 예전 모양을 읽기 위해서만 남겨 둔 선언 — 라벨은 필요하지만 폼에는 안 나온다
+    if(f.hidden) return '';
     const id = `tf-${track.id}-${f.key}`;
     if(f.type === 'number'){
       const cur = v[f.key];
@@ -665,9 +790,22 @@ function fieldsHtml(track, val){
         `<div class="tf-opt-d">${escapeHtml(sel ? (sel.desc || sel.name) : (f.hint || ''))}</div>` +
       `</div>`;
     }
+    if(f.type === 'events'){
+      const list = eventsOf(f, v).slice().sort(evOrder);
+      return `<div class="tf" data-key="${f.key}" data-type="events" data-max="${f.max}" ` +
+          `data-unit="${escapeHtml(f.unit || '회')}">` +
+        `<div class="tf-ev-top">` +
+          `<label class="tf-label">${escapeHtml(f.label)}</label>` +
+          `<span class="tf-ev-n"></span>` +
+        `</div>` +
+        `<div class="tf-evs">${list.map(ev => evHtml(f, ev)).join('')}</div>` +
+        `<button type="button" class="tf-ev-add">＋ ${escapeHtml(f.add || '추가')}</button>` +
+        `<div class="tf-ev-none">아직 없어요. 볼 때마다 하나씩 더하면 됩니다.</div>` +
+      `</div>`;
+    }
     if(f.type === 'bool'){
       const on = v[f.key] === true;
-      return `<div class="tf" data-key="${f.key}" data-type="bool" data-v="${on ? '1' : ''}">` +
+      return `<div class="tf${f.narrow ? ' tf-narrow' : ''}" data-key="${f.key}" data-type="bool" data-v="${on ? '1' : ''}">` +
         `<button type="button" class="tf-bool${on ? ' on' : ''}" aria-pressed="${on}">` +
           `${escapeHtml(f.label)}</button>` +
       `</div>`;
@@ -685,9 +823,78 @@ function fieldsHtml(track, val){
   }).join('');
 }
 
+// 지금 몇 시인가 — 더하는 순간이 곧 그 시각이다. 지난 날을 채우는 중이면
+// 비워 둔다. 지난 화요일 기록에 오늘 오후 2시를 적어 두는 건 그냥 틀린 값이다.
+const hmNow = () => { const d = new Date(); return pad2(d.getHours()) + ':' + pad2(d.getMinutes()); };
+
+/**
+ * 접어 둔 칸에 보일 한 줄 — '7형 · 🩸 피 · 😖 통증'.
+ *
+ * 적은 것만 적는다. 안 고른 칸까지 '아니오'로 늘어놓으면 줄이 길어지기만 하고
+ * 정작 눈에 걸려야 할 것(피가 섞인 날)이 묻힌다.
+ */
+function evBrief(f, v){
+  const bits = [];
+  for(const sf of f.fields || []){
+    const x = v[sf.key];
+    if(x == null || x === '' || (Array.isArray(x) && !x.length)) continue;
+    if(sf.type === 'bool'){ if(x) bits.push(sf.label); continue; }
+    if(sf.type === 'photo'){ bits.push('📷 ' + x.length); continue; }
+    if(sf.type === 'choice'){
+      const o = (sf.options || []).find(y => y.v === x);
+      bits.push((o ? o.name : x) + (sf.brief || ''));
+      continue;
+    }
+    if(sf.type === 'text'){
+      const s = String(x);
+      bits.push(s.length > 16 ? s.slice(0, 16) + '…' : s);
+      continue;
+    }
+    const t = fieldText(sf, x);
+    if(t) bits.push(t);
+  }
+  return bits.join(' · ');
+}
+
+let _evUid = 0;
+/**
+ * 사건 한 칸.
+ *
+ * 안쪽은 다시 fieldsHtml로 그린다 — 사건 안에서만 쓰는 칸 종류를 따로 만들면
+ * 같은 일을 하는 코드가 두 벌이 된다. id가 겹치면 label의 for가 엉키므로
+ * 칸마다 새 번호를 준다(화면에서만 쓰는 번호다. 저장되지 않는다).
+ *
+ * 다 적은 칸은 접어 둔다. 하루에 서너 번이면 폼 서넛이 화면을 가득 메우는데,
+ * 정작 손대는 건 방금 더한 하나다. 접힌 줄에는 적은 것이 요약으로 남아서,
+ * 펴지 않고도 그날이 어땠는지 훑을 수 있다.
+ */
+function evHtml(f, ev, open){
+  const e = ev || {};
+  const item = f.item || '기록';
+  return `<div class="tf-ev${open ? ' open' : ''}">` +
+    `<div class="tf-ev-hdr">` +
+      `<span class="tf-ev-no"></span>` +
+      `<input type="time" class="tf-ev-at" value="${escapeHtml(e.at || '')}" ` +
+        `aria-label="${escapeHtml(item)} 시간">` +
+      `<button type="button" class="tf-ev-open" aria-expanded="${open ? 'true' : 'false'}">` +
+        `<span class="tf-ev-sum"></span><span class="tf-ev-caret" aria-hidden="true">▾</span>` +
+      `</button>` +
+      `<button type="button" class="tf-ev-x" title="이 ${escapeHtml(item)} 지우기" ` +
+        `aria-label="이 ${escapeHtml(item)} 지우기">✕</button>` +
+    `</div>` +
+    `<div class="tf-ev-body">${fieldsHtml({ id: 'ev' + (++_evUid), fields: f.fields }, e)}</div>` +
+  `</div>`;
+}
+
 /** 저장된 값을 사람이 읽는 한 줄로 (공개본 미리보기 등) */
 function fieldText(f, val){
   if(val == null) return '';
+  if(f && f.type === 'events'){
+    const list = Array.isArray(val) ? val : [];
+    if(!list.length) return '';
+    const at = list.map(e => e && e.at).filter(Boolean);
+    return list.length + (f.unit || '회') + (at.length ? ` (${at.join(', ')})` : '');
+  }
   if(f && f.type === 'tags') return toTags(val).map(tagLabel).join(', ');
   if(Array.isArray(val)) return `사진 ${val.length}장`;
   if(!f) return String(val);
@@ -706,9 +913,19 @@ function fieldText(f, val){
  * 값이 전부 비면 null을 넘겨 "기록 없음"으로 만든다.
  */
 function wireFields(box, track, onChange){
+  // 사건 목록 안쪽에도 똑같은 칸들이 들어가고, 그 안쪽은 자기 폼이 따로 읽는다.
+  // 바깥 폼이 안쪽 칸까지 긁어 가면 값이 두 번 세어지므로, 각자 자기 층의 칸만 본다.
+  const level = box.closest('.tf-ev') || null;
+  const own = sel => [...box.querySelectorAll(sel)]
+    .filter(el => (el.closest('.tf-ev') || null) === level);
+  // 이 날짜 — 사건을 더할 때 시간을 지금으로 채울지 결정한다
+  const dsBox = box.closest('[data-ds]');
+  const ds = dsBox ? dsBox.dataset.ds : '';
+  const evReads = new Map();              // 사건 목록 칸 → () => [사건…]
+
   const read = () => {
     const out = {};
-    box.querySelectorAll('.tf').forEach(el => {
+    own('.tf').forEach(el => {
       const key = el.dataset.key;
       if(el.dataset.type === 'number'){
         const raw = el.querySelector('.tf-input').value.trim();
@@ -724,6 +941,10 @@ function wireFields(box, track, onChange){
       }else if(el.dataset.type === 'tags'){
         const tags = [...el.querySelectorAll('.tf-tag')].map(t => t.dataset.v);
         if(tags.length) out[key] = tags;
+      }else if(el.dataset.type === 'events'){
+        const rd = evReads.get(el);
+        const list = rd ? rd() : [];
+        if(list.length) out[key] = list;
       }else if(el.dataset.type === 'choice'){
         // 고른 값은 data-v에 문자열로 들어 있다. 숫자로 적힌 선택지(브리스톨 1~7)는
         // 숫자로 되돌려 저장한다 — 나중에 크기를 비교할 수 있어야 한다.
@@ -737,17 +958,19 @@ function wireFields(box, track, onChange){
         if(t) out[key] = t;
       }
     });
-    return Object.keys(out).length ? out : null;
+    if(!Object.keys(out).length) return null;
+    // 세어 주는 숫자(변 횟수처럼)는 트랙이 스스로 채운다
+    return typeof track.derive === 'function' ? track.derive(out) : out;
   };
   const sync = () => {
     // 숫자 칩 선택 표시를 입력값과 맞춘다
-    box.querySelectorAll('.tf[data-type="number"]').forEach(el => {
+    own('.tf[data-type="number"]').forEach(el => {
       const raw = el.querySelector('.tf-input').value.trim();
       el.querySelectorAll('.tf-chip').forEach(c =>
         c.classList.toggle('on', raw !== '' && +c.dataset.v === +raw));
     });
     // 더해 가는 칸은 막대와 퍼센트를 값에 맞춘다
-    box.querySelectorAll('.tf[data-type="counter"]').forEach(el => {
+    own('.tf[data-type="counter"]').forEach(el => {
       const goal = +el.dataset.goal || 0;
       const n = Math.max(0, +el.querySelector('.tf-cnt-v').value || 0);
       const bar = el.querySelector('.tf-bar > i');
@@ -764,14 +987,15 @@ function wireFields(box, track, onChange){
   // 누르는 즉시 저장 — 버튼은 기다릴 이유가 없다
   const now = () => { clearTimeout(timer); onChange(read()); };
 
-  box.querySelectorAll('.tf-chip').forEach(c => c.addEventListener('click', () => {
-    const el = c.closest('.tf').querySelector('.tf-input');
-    el.value = (el.value.trim() !== '' && +el.value === +c.dataset.v) ? '' : c.dataset.v;
-    sync();
-    now();
-  }));
+  own('.tf[data-type="number"]').forEach(el => el.querySelectorAll('.tf-chip').forEach(c =>
+    c.addEventListener('click', () => {
+      const input = el.querySelector('.tf-input');
+      input.value = (input.value.trim() !== '' && +input.value === +c.dataset.v) ? '' : c.dataset.v;
+      sync();
+      now();
+    })));
   // 더해 가는 칸 — 누르면 지금 값에 더한다(덮어쓰지 않는다)
-  box.querySelectorAll('.tf[data-type="counter"]').forEach(el => {
+  own('.tf[data-type="counter"]').forEach(el => {
     const input = el.querySelector('.tf-cnt-v');
     const max = +el.dataset.max || 1e6;
     el.querySelectorAll('.tf-add').forEach(b => b.addEventListener('click', () => {
@@ -782,7 +1006,7 @@ function wireFields(box, track, onChange){
     }));
   });
   // 여럿 중 하나 — 고른 것을 다시 누르면 취소된다(잘못 눌렀을 때 되돌릴 길)
-  box.querySelectorAll('.tf[data-type="choice"]').forEach(el => {
+  own('.tf[data-type="choice"]').forEach(el => {
     const desc = el.querySelector('.tf-opt-d');
     el.querySelectorAll('.tf-opt').forEach(b => b.addEventListener('click', () => {
       const off = el.dataset.v === b.dataset.v;
@@ -793,7 +1017,7 @@ function wireFields(box, track, onChange){
     }));
   });
   // 음식 태그 — 치는 것보다 고르는 게 빨라야 한다
-  box.querySelectorAll('.tf[data-type="tags"]').forEach(el => {
+  own('.tf[data-type="tags"]').forEach(el => {
     const wrap  = el.querySelector('.tf-tags');
     const input = el.querySelector('.tf-tag-in');
     const sug   = el.querySelector('.tf-sug');
@@ -965,7 +1189,7 @@ function wireFields(box, track, onChange){
     wrap.addEventListener('click', e => { if(e.target === wrap) input.focus(); });
     paint();
   });
-  box.querySelectorAll('.tf[data-type="bool"]').forEach(el => {
+  own('.tf[data-type="bool"]').forEach(el => {
     const b = el.querySelector('.tf-bool');
     b.addEventListener('click', () => {
       const on = !el.dataset.v;
@@ -976,7 +1200,7 @@ function wireFields(box, track, onChange){
     });
   });
   // 사진 — 고르면 줄여서 기기에 담고, 로그인돼 있으면 뒤이어 올라간다
-  box.querySelectorAll('.tf[data-type="photo"]').forEach(el => {
+  own('.tf[data-type="photo"]').forEach(el => {
     const file = el.querySelector('.tf-file');
     const msg  = el.querySelector('.tf-shot-msg');
     const max  = +el.dataset.max;
@@ -1037,12 +1261,91 @@ function wireFields(box, track, onChange){
     paint();
   });
 
-  box.querySelectorAll('.tf-input, .tf-text, .tf-cnt-v').forEach(el => el.addEventListener('input', fire));
-  box.querySelectorAll('.tf-input, .tf-text, .tf-cnt-v').forEach(el => el.addEventListener('blur', () => {
+  // 사건 목록 — 하루에 몇 번이고 생기는 것. 하나씩 더하고, 횟수는 세어 준다.
+  own('.tf[data-type="events"]').forEach(el => {
+    const f = (track.fields || []).find(x => x.key === el.dataset.key && x.type === 'events');
+    if(!f) return;
+    const listEl = el.querySelector('.tf-evs');
+    const addBtn = el.querySelector('.tf-ev-add');
+    const nEl    = el.querySelector('.tf-ev-n');
+    const unit   = el.dataset.unit || '회';
+    const max    = +el.dataset.max || 20;
+    const subs   = new Map();             // .tf-ev → 그 칸의 폼
+    const rows   = () => [...listEl.children];
+
+    const paint = () => {
+      const rs = rows();
+      rs.forEach((r, i) => {
+        r.querySelector('.tf-ev-no').textContent = '#' + (i + 1);
+        const sub = subs.get(r);
+        const brief = sub ? evBrief(f, sub.read() || {}) : '';
+        const sum = r.querySelector('.tf-ev-sum');
+        sum.textContent = brief || '아직 안 적음';
+        sum.classList.toggle('dim', !brief);
+      });
+      // 사람이 세지 않아도 되는 숫자는 사람에게 세게 하지 않는다
+      if(nEl) nEl.textContent = rs.length ? `총 ${rs.length}${unit}` : '';
+      el.classList.toggle('empty', !rs.length);
+      addBtn.hidden = rs.length >= max;
+    };
+    evReads.set(el, () => rows().map(r => {
+      const sub = subs.get(r);
+      const o = (sub && sub.read()) || {};
+      const at = r.querySelector('.tf-ev-at').value;
+      // 시간을 앞에 둔다 — 저장된 걸 그대로 읽을 때 언제 일이었는지가 먼저 나온다
+      return at ? { at, ...o } : { ...o };
+    }).sort(evOrder));
+
+    const wireRow = r => {
+      // 안쪽은 제 폼이 읽는다. 바뀌면 바깥에 알리기만 하면 되고, 값은 저장할 때
+      // read()가 한 번에 모아 간다.
+      subs.set(r, wireFields(r.querySelector('.tf-ev-body'), { fields: f.fields },
+        () => { paint(); now(); }));
+      r.querySelector('.tf-ev-at').addEventListener('change', now);
+      const openBtn = r.querySelector('.tf-ev-open');
+      openBtn.addEventListener('click', () => {
+        const on = !r.classList.contains('open');
+        r.classList.toggle('open', on);
+        openBtn.setAttribute('aria-expanded', String(on));
+      });
+      r.querySelector('.tf-ev-x').addEventListener('click', () => {
+        const sub = subs.get(r);
+        const filled = !!(sub && sub.read()) || !!r.querySelector('.tf-ev-at').value;
+        if(filled && !confirm(`이 ${f.item || '기록'}을 지울까요?`)) return;
+        // 사진은 여기서 같이 치운다. 칸이 사라지면 아무 데서도 안 걸리는 사진이
+        // 저장소에 남는다.
+        [...r.querySelectorAll('.tf[data-type="photo"] .tf-shot')].forEach(sh => {
+          if(window.DiaryPhotos) DiaryPhotos.remove(sh.dataset.id).catch(() => {});
+        });
+        subs.delete(r);
+        r.remove();
+        paint();
+        now();
+      });
+    };
+    rows().forEach(wireRow);
+
+    addBtn.addEventListener('click', () => {
+      if(rows().length >= max) return;
+      const hold = document.createElement('div');
+      // 방금 더한 칸은 펴 둔다 — 더하자마자 적으려고 누른 것이다
+      hold.innerHTML = evHtml(f, { at: (!ds || ds === todayStr()) ? hmNow() : '' }, true);
+      const r = hold.firstElementChild;
+      listEl.appendChild(r);
+      wireRow(r);
+      paint();
+      now();                               // 더한 그 자리에서 저장된다
+      r.scrollIntoView({ block: 'nearest' });
+    });
+    paint();
+  });
+
+  own('.tf-input, .tf-text, .tf-cnt-v').forEach(el => el.addEventListener('input', fire));
+  own('.tf-input, .tf-text, .tf-cnt-v').forEach(el => el.addEventListener('blur', () => {
     clearTimeout(timer); onChange(read());
   }));
   sync();
-  return { flush(){ clearTimeout(timer); onChange(read()); } };
+  return { read, flush(){ clearTimeout(timer); onChange(read()); } };
 }
 
 /** 사진 크게 보기 */
@@ -1074,5 +1377,6 @@ window.DiaryTracks = {
   meds, addMed, renameMed, removeMed, MED_PREFIX,
   toTags, tagName, tagQty, tagLabel, TAG_SEP,
   mealKinds, mealKindsIn, foodIndex, foodSuggest,
+  eventsOf, evField, evOrder, photoIdsIn, stoolLog, stoolCount,
   SETTING_KEY, MEDS_KEY, BRISTOL, MEALS, SKIN_AREAS,
 };

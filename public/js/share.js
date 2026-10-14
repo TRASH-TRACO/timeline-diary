@@ -110,8 +110,28 @@ function projectDay(day, spec){
     }
     // 선언된 필드만 옮긴다. 여기 없는 필드는 그냥 안 나간다 —
     // "빼야 할 것을 지운다"가 아니라 "넣을 것만 넣는다"여야 실수가 안 샌다.
+    //
+    // 사건 목록(변 하나하나)은 안쪽까지 같은 규칙으로 걸러야 한다. 'log'를 통째로
+    // 옮기면 '모양까지'를 골랐는데도 사건마다 적은 메모와 사진이 함께 나간다.
+    // 그래서 수준은 'log.type'처럼 안쪽 칸을 따로 적고, 여기서 점을 풀어 읽는다.
     const v = {};
-    for(const k of level.fields) if(val[k] !== undefined) v[k] = val[k];
+    const subs = {};
+    for(const k of level.fields){
+      const dot = k.indexOf('.');
+      if(dot < 0){ if(val[k] !== undefined) v[k] = val[k]; continue; }
+      const base = k.slice(0, dot);
+      (subs[base] || (subs[base] = [])).push(k.slice(dot + 1));
+    }
+    for(const base in subs){
+      if(!Array.isArray(val[base])) continue;
+      // 빈 칸이 되어도 자리는 남긴다. 목록의 길이가 곧 "몇 번 있었나"라서,
+      // 내용이 다 빠진 칸을 지우면 횟수가 줄어든 기록이 되어 버린다.
+      v[base] = val[base].map(ev => {
+        const o = {};
+        if(ev && typeof ev === 'object') for(const k of subs[base]) if(ev[k] !== undefined) o[k] = ev[k];
+        return o;
+      });
+    }
     if(Object.keys(v).length) t[id] = v;
   }
   if(Object.keys(t).length) out.t = t;
@@ -133,8 +153,9 @@ function previewShare(days, spec){
     if(pub.note) out.notes++;
     for(const id in (pub.t || {})){
       out.tracks[id] = (out.tracks[id] || 0) + 1;
-      const ph = pub.t[id].photos;
-      if(Array.isArray(ph)) out.photos += ph.length;
+      // 어떤 칸이 사진인지는 선언이 안다. 'photos'라는 이름만 세면 부위별 사진
+      // (피부의 fh·lc…)과 사건마다 붙은 사진이 통째로 빠진다.
+      out.photos += DiaryTracks.photoIdsIn(DiaryTracks.trackById(id), pub.t[id]).length;
     }
   }
   return out;
@@ -163,6 +184,34 @@ function mdRoute(v){
   const places = v.places != null ? v.places : (v.v2 || v.visits || []).length;
   if(places) out.push(`머문 곳: ${places}곳`);
   if(v.p) out.push('좌표: 생략 — Markdown에는 담지 않습니다');
+  return out;
+}
+
+/**
+ * 사건 목록은 한 줄로 뭉개지 않는다.
+ *
+ * "변 3회"만 적으면 하루에 한 줄로 받던 때로 되돌아간다 — 세 번 중 어느 것이
+ * 묽었고 어느 것에 피가 있었는지가 다시 사라진다. 한 번에 한 줄씩 적는다.
+ * 그랬다/아니다 칸은 '예'를 붙이지 않고 그랬던 것만 적는다 — 읽는 쪽이 사람이든
+ * AI든 "🩸 피: 아니오"가 줄줄이 있는 것보다 있는 것만 보이는 쪽이 낫다.
+ */
+function mdEvents(f, val){
+  const list = Array.isArray(val) ? val : [];
+  const unit = f.unit || '회';
+  const out = [`  - ${f.label}: 총 ${list.length}${unit}`];
+  list.forEach((ev, i) => {
+    const e = ev || {};
+    const bits = [];
+    for(const k in e){
+      if(k === 'at') continue;                       // 시간은 줄 머리에 적는다
+      const sf = DiaryTracks.evField(f, k);
+      if(sf && sf.type === 'bool'){ if(e[k]) bits.push(sf.label); continue; }
+      const txt = DiaryTracks.fieldText(sf, e[k]);
+      if(txt !== '') bits.push(`${sf ? sf.label : k}: ${txt}`);
+    }
+    out.push(`    - ${i + 1}번째${e.at ? ' ' + e.at : ' (시간 미기록)'}` +
+      (bits.length ? ' — ' + bits.join(', ') : ''));
+  });
   return out;
 }
 
@@ -224,6 +273,7 @@ function toMarkdown(days, spec, opts){
       }
       for(const k in v){
         const f = (t.fields || []).find(x => x.key === k);
+        if(f && f.type === 'events'){ mdEvents(f, v[k]).forEach(line => L.push(line)); continue; }
         const txt = DiaryTracks.fieldText(f, v[k]);
         if(txt === '') continue;
         L.push(`  - ${f ? f.label : k}: ${txt}`);
@@ -249,13 +299,37 @@ function toMarkdown(days, spec, opts){
  * "이 사람이 그걸 기록하고 있다"는 사실이 새어 나간다.
  */
 function legend(days){
-  const used = {};
+  const used = {};                      // 트랙 id → 쓰인 칸 이름들
+  const sub  = {};                      // 트랙 id → 칸 이름 → 그 안에 쓰인 칸들
   for(const ds in days){
     for(const id in (days[ds].t || {})){
       (used[id] || (used[id] = new Set()));
-      Object.keys(days[ds].t[id]).forEach(k => used[id].add(k));
+      const tv = days[ds].t[id];
+      for(const k in tv){
+        used[id].add(k);
+        // 사건 목록 — 안쪽 칸 이름도 뜻을 적어 줘야 한다
+        if(!Array.isArray(tv[k])) continue;
+        tv[k].forEach(ev => {
+          if(!ev || typeof ev !== 'object' || Array.isArray(ev)) return;
+          const s = sub[id] || (sub[id] = {});
+          const set = s[k] || (s[k] = new Set());
+          Object.keys(ev).forEach(kk => set.add(kk));
+        });
+      }
     }
   }
+  /** 칸 하나의 뜻 */
+  const desc = f => {
+    const d = { label: f.label };
+    if(f.unit) d.unit = f.unit;
+    if(f.type === 'bool' || f.type === 'photo' || f.type === 'tags') d.type = f.type;
+    // 눈금은 숫자만 봐서는 못 읽는다 — 2가 뭔지 같이 적어 준다
+    if(f.type === 'choice' && f.options){
+      d.options = {};
+      f.options.forEach(o => { d.options[o.v] = o.desc || o.name; });
+    }
+    return d;
+  };
   const out = {};
   for(const id in used){
     const t = DiaryTracks.trackById(id);
@@ -265,13 +339,19 @@ function legend(days){
     for(const k of used[id]){
       const f = (t.fields || []).find(x => x.key === k);
       if(!f){ fields[k] = { label: k }; continue; }
-      const d = { label: f.label };
-      if(f.unit) d.unit = f.unit;
-      if(f.type === 'bool' || f.type === 'photo' || f.type === 'tags') d.type = f.type;
-      // 눈금은 숫자만 봐서는 못 읽는다 — 2가 뭔지 같이 적어 준다
-      if(f.type === 'choice' && f.options){
-        d.options = {};
-        f.options.forEach(o => { d.options[o.v] = o.desc || o.name; });
+      const d = desc(f);
+      if(f.type === 'events'){
+        // 목록이지 한 값이 아니라는 걸 먼저 적는다. 길이가 곧 횟수다.
+        d.type = 'events';
+        d.note = `목록입니다. 칸 수가 그날 ${f.label} 횟수입니다.`;
+        const keys = (sub[id] || {})[k];
+        if(keys){
+          d.each = {};
+          for(const kk of keys){
+            const sf = DiaryTracks.evField(f, kk);
+            d.each[kk] = sf ? desc(sf) : { label: kk };
+          }
+        }
       }
       fields[k] = d;
     }
@@ -282,6 +362,6 @@ function legend(days){
 }
 
 window.DiaryShare = {
-  redactRoute, routeSummary, projectDay, previewShare, toMarkdown, legend,
+  redactRoute, routeSummary, projectDay, previewShare, toMarkdown, mdEvents, legend,
   HOME_RADIUS, HOME_NAMES,
 };
