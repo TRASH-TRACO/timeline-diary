@@ -134,6 +134,26 @@ function escapeHtml(s){
 }
 const $ = id => document.getElementById(id);
 
+/**
+ * 내용에 맞춰 키가 자라는 글상자.
+ *
+ * 적는 칸과 읽는 칸이 같은 물건이라, 한 줄짜리로 두면 세 줄을 적어 놓고도 한 줄씩
+ * 밀어 보며 읽어야 한다. 쓸 때는 좁은 게 낫고 읽을 때는 넓은 게 낫다는 게 아니라,
+ * 적은 만큼 보이면 둘 다 된다.
+ *
+ * 화면에 없는 칸(접어 둔 줄 안)은 높이를 잴 수 없다. 그때는 손대지 않고 두었다가
+ * 펼 때 다시 잰다.
+ */
+function autoGrow(el){
+  if(!el) return;
+  const prev = el.style.height;
+  el.style.height = 'auto';
+  const h = el.scrollHeight;
+  if(!h){ el.style.height = prev; return; }
+  // border-box라 테두리만큼 모자라면 쓸데없는 스크롤바가 생긴다
+  el.style.height = Math.min(h + 2, Math.round(innerHeight * 0.6)) + 'px';
+}
+
 let _toastTimer = null;
 function showToast(msg){
   let el = $('toast');

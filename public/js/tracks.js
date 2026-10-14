@@ -846,8 +846,10 @@ function evBrief(f, v){
       continue;
     }
     if(sf.type === 'text'){
-      const s = String(x);
-      bits.push(s.length > 16 ? s.slice(0, 16) + '…' : s);
+      // 어디서 자를지는 칸 너비가 정한다(CSS ellipsis). 여기서 16자로 미리 잘라
+      // 두면 넓은 화면에서도 메모가 세 마디에서 끊긴다.
+      const s = String(x).replace(/\s*\n\s*/g, ' ');
+      bits.push(s.length > 80 ? s.slice(0, 80) + '…' : s);
       continue;
     }
     const t = fieldText(sf, x);
@@ -1281,6 +1283,7 @@ function wireFields(box, track, onChange){
         const brief = sub ? evBrief(f, sub.read() || {}) : '';
         const sum = r.querySelector('.tf-ev-sum');
         sum.textContent = brief || '아직 안 적음';
+        sum.title = brief;                  // 줄이 잘렸을 때 마우스로 확인할 길
         sum.classList.toggle('dim', !brief);
       });
       // 사람이 세지 않아도 되는 숫자는 사람에게 세게 하지 않는다
@@ -1307,6 +1310,8 @@ function wireFields(box, track, onChange){
         const on = !r.classList.contains('open');
         r.classList.toggle('open', on);
         openBtn.setAttribute('aria-expanded', String(on));
+        // 접혀 있는 동안에는 높이를 잴 수 없었다. 펴는 지금이 그때다.
+        if(on) r.querySelectorAll('.tf-text').forEach(autoGrow);
       });
       r.querySelector('.tf-ev-x').addEventListener('click', () => {
         const sub = subs.get(r);
@@ -1338,6 +1343,12 @@ function wireFields(box, track, onChange){
       r.scrollIntoView({ block: 'nearest' });
     });
     paint();
+  });
+
+  // 적은 만큼 보이게 — 메모는 적는 칸이 곧 읽는 칸이다
+  own('.tf-text').forEach(el => {
+    autoGrow(el);
+    el.addEventListener('input', () => autoGrow(el));
   });
 
   own('.tf-input, .tf-text, .tf-cnt-v').forEach(el => el.addEventListener('input', fire));
