@@ -180,10 +180,12 @@ setTimeout(function(){document.documentElement.classList.remove('booting');},200
               <button class="tf-chip" onclick="sharePreset('30d')">최근 30일</button>
               <button class="tf-chip" onclick="sharePreset('all')">전체</button>
             </div>
+            <!-- input까지 받는다. change만 보면 휴대폰에서 달력을 돌려 고른 날짜가
+                 늦게 도착해, 칸에는 고른 날이 보이는데 더 넓은 범위가 나간다. -->
             <div class="sh-range">
-              <input type="date" id="sh-from" onchange="refreshShare()">
+              <input type="date" id="sh-from" oninput="refreshShare()" onchange="refreshShare()">
               <span>~</span>
-              <input type="date" id="sh-to" onchange="refreshShare()">
+              <input type="date" id="sh-to" oninput="refreshShare()" onchange="refreshShare()">
             </div>
           </div>
           <div class="sh-sec">

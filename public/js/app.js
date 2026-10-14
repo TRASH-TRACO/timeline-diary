@@ -587,6 +587,23 @@ function wireImport(){
 // 아니라 걸러진 결과 자체를 그린다 — 집을 가렸다면 가려진 그림이 나와야 믿을 수 있다.
 let _shareSpec = null;
 
+/**
+ * 날짜 칸에 보이는 것이 곧 나가는 범위다.
+ *
+ * 예전에는 반대였다. 고른 날짜는 refreshShare가 돌 때만 _shareSpec에 옮겨졌고,
+ * 공개 수준을 바꾸면 openShare가 다시 그리면서 _shareSpec의 옛 날짜를 칸에
+ * 되써 버렸다. 휴대폰에서는 달력을 돌려 날짜를 고른 뒤 곧장 다른 걸 누르면
+ * change가 늦게 와서, 칸에는 고른 날짜가 보이는데 실제로는 **더 넓은 범위가**
+ * 나갔다. 화면과 나가는 것이 어긋나면 그건 미리보기가 아니다.
+ */
+function readShareRange(){
+  const f = $('sh-from'), t = $('sh-to');
+  if(f && f.value) _shareSpec.from = f.value;
+  if(t && t.value) _shareSpec.to   = t.value;
+  const n = $('sh-note');
+  if(n) _shareSpec.note = n.checked;
+}
+
 function openShare(){
   const span = DiaryStore.dateSpan();
   if(!span.first){ showToast('아직 내보낼 기록이 없어요'); return; }
@@ -601,6 +618,13 @@ function openShare(){
   $('sh-from').value = _shareSpec.from;
   $('sh-to').value   = _shareSpec.to;
   $('sh-note').checked = !!_shareSpec.note;
+  renderShareTracks();
+  $('share-modal').style.display = 'flex';
+  refreshShare();
+}
+
+/** 트랙 목록만 다시 그린다 — 날짜 칸은 건드리지 않는다 */
+function renderShareTracks(){
   $('sh-tracks').innerHTML = DiaryTracks.all().map(t => {
     const levels = t.share || [];
     if(!levels.length) return '';
@@ -615,26 +639,28 @@ function openShare(){
       `<div class="sh-track-d">${lv ? escapeHtml(lv.desc || lv.name) : '이 트랙은 내보내지 않습니다'}</div>` +
     `</div>`;
   }).join('');
-  $('share-modal').style.display = 'flex';
-  refreshShare();
 }
 function closeShare(){ $('share-modal').style.display = 'none'; }
 function setShareLevel(id, level){
+  readShareRange();                     // 고른 날짜부터 챙긴다
   _shareSpec.tracks[id] = level;
-  openShare();                          // 설명 줄까지 다시 그린다
+  renderShareTracks();                  // 설명 줄까지 다시 그린다
+  refreshShare();
 }
 /**
  * 한 가지만 뽑고 싶을 때, 나머지를 하나씩 끄고 있으면 안 쓰게 된다.
  * '모두 빼기' 뒤에 원하는 것만 켜는 게 두 번이면 끝난다.
  */
 function shareAll(on){
+  readShareRange();
   DiaryTracks.all().forEach(t => {
     const lv = on ? DiaryTracks.defaultShareLevel(t) : null;
     _shareSpec.tracks[t.id] = lv ? lv.id : '';
   });
   _shareSpec.note = on;
   $('sh-note').checked = on;
-  openShare();
+  renderShareTracks();
+  refreshShare();
 }
 function sharePreset(kind){
   const span = DiaryStore.dateSpan();
@@ -655,9 +681,7 @@ function sharePreset(kind){
 
 /** 지금 설정으로 걸러낸 결과 */
 function shareProjection(){
-  _shareSpec.from = $('sh-from').value || _shareSpec.from;
-  _shareSpec.to   = $('sh-to').value   || _shareSpec.to;
-  _shareSpec.note = $('sh-note').checked;
+  readShareRange();
   const spec = { note: _shareSpec.note, tracks: {} };
   for(const id in _shareSpec.tracks) if(_shareSpec.tracks[id]) spec.tracks[id] = _shareSpec.tracks[id];
   const src = DiaryStore.daysInRange(_shareSpec.from, _shareSpec.to);
@@ -684,7 +708,11 @@ function refreshShare(){
     ? `<div class="sh-warn">⚠️ ${warns.join('<br>')}</div>` : '';
 
   if(!dsList.length){
-    $('sh-stat').innerHTML = '<span class="dim">고른 조건으로는 나갈 게 없어요</span>';
+    // "나갈 게 없다"로 뭉뚱그리면 날짜를 거꾸로 적은 건지 정말 기록이 없는 건지
+    // 알 수가 없다. 고칠 수 있는 실수는 고칠 수 있다고 말해 준다.
+    $('sh-stat').innerHTML = _shareSpec.from > _shareSpec.to
+      ? `<span class="dim">시작일(${escapeHtml(_shareSpec.from)})이 끝일(${escapeHtml(_shareSpec.to)})보다 늦어요</span>`
+      : '<span class="dim">고른 조건으로는 나갈 게 없어요</span>';
     $('sh-sample').innerHTML = '';
     $('sh-export').disabled = $('sh-export-md').disabled = true;
     $('sh-hint').textContent = '';
