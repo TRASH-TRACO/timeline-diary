@@ -215,6 +215,9 @@ const STOOL_EV = [
   { key: 'blood', type: 'bool', label: '🩸 피',   narrow: true },
   { key: 'mucus', type: 'bool', label: '🫧 점액', narrow: true },
   { key: 'pain',  type: 'bool', label: '😖 통증', narrow: true },
+  // 보고 나왔는데 덜 나온 것 같은 느낌. 모양·횟수만으로는 안 잡히는데
+  // 과민성 장이나 염증을 볼 때 의사가 실제로 묻는 것이라 따로 둔다.
+  { key: 'tenes', type: 'bool', label: '🔁 잔변감', narrow: true },
   // 말로 옮기기 어려운 건 찍어두는 게 낫다. 진료실에서 "그때 그랬어요"보다
   // 그날 사진 한 장이 할 말이 많다.
   { key: 'photos', type: 'photo', label: '사진', max: 2 },
@@ -261,7 +264,7 @@ function stoolCount(v){
 }
 // 공개 수준 — 사진과 메모는 따로 둔다. '모양까지'를 골랐다는 이유로 딸려 나가면
 // 안 된다. 예전 모양으로 적힌 날도 같이 나가야 하니 예전 칸(type·blood…)도 적는다.
-const ST_SHAPE = ['count', 'log.at', 'log.type', 'log.blood', 'log.mucus', 'log.pain',
+const ST_SHAPE = ['count', 'log.at', 'log.type', 'log.blood', 'log.mucus', 'log.pain', 'log.tenes',
                   'type', 'blood'];
 
 const TRACKS = [
@@ -494,17 +497,19 @@ const TRACKS = [
       if(total) rows.push({ k: '하루 평균', v: (total / days.length).toFixed(1).replace(/\.0$/, '') + '회' });
       // 모양과 증상은 '며칠'이 아니라 '몇 번'으로 센다. 하루에 세 번 묽었으면
       // 그건 하루가 아니라 세 번이다 — 그 차이가 바로 이 모양으로 바꾼 이유다.
-      let hard = 0, soft = 0, blood = 0, pain = 0;
+      let hard = 0, soft = 0, blood = 0, pain = 0, tenes = 0;
       days.forEach(e => stoolLog(e.v).forEach(x => {
         if(x.type <= 2) hard++;
         if(x.type >= 6) soft++;
         if(x.blood || x.mucus) blood++;
         if(x.pain) pain++;
+        if(x.tenes) tenes++;
       }));
       if(hard)  rows.push({ k: '단단한 변', v: hard + '번' });
       if(soft)  rows.push({ k: '무른 변', v: soft + '번' });
       if(blood) rows.push({ k: '피·점액', v: blood + '번' });
       if(pain)  rows.push({ k: '통증', v: pain + '번' });
+      if(tenes) rows.push({ k: '잔변감', v: tenes + '번' });
       return rows;
     },
   },
