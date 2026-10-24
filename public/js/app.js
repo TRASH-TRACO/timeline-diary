@@ -165,8 +165,10 @@ function renderCalendar(){
       cell.appendChild(dist);
     }
     // 경로 말고 다른 트랙 기록은 작은 배지로 (예: 20mg)
+    // 날짜를 같이 넘긴다. 대개는 그날 적은 값만 보면 되지만, 여드름처럼 난 날과
+    // 진 날 사이에는 아무것도 안 적어도 계속 있는 기록은 날짜를 알아야 센다.
     const badges = badgeTracks
-      .map(t => t.cell(DiaryStore.getTrack(ds, t.id)))
+      .map(t => t.cell(DiaryStore.getTrack(ds, t.id), ds))
       .filter(c => c && c.badge);
     if(badges.length){
       const row = document.createElement('div');
@@ -301,6 +303,9 @@ function renderPanel(){
           `<button class="pn-tab${dayView === 'map' ? ' on' : ''}" data-view="map" onclick="setDayView('map')">지도에서 재생</button>` +
         `</div>` : '') +
         `<div class="pn-route" id="pn-route"></div>`;
+    }else if(t.view === 'acne'){
+      // 얼굴 그림 위에 자리를 찍는 일은 칸으로 받을 수 없다. 전용 화면이 그린다.
+      body = `<div class="pn-acne" id="pn-acne"></div>`;
     }else if(t.fields){
       body = `<div class="pn-track-body">${DiaryTracks.fieldsHtml(t, val)}</div>` +
         // 트랙이 폼 밑에 한 줄 더 붙이고 싶을 때 (식사의 '7일 N가지')
@@ -335,6 +340,7 @@ function renderPanel(){
   panel.innerHTML = html;
 
   renderRouteArea();
+  if($('pn-acne') && window.DiaryAcne) DiaryAcne.render($('pn-acne'), selDate);
 
   // 트랙 폼 — 입력이 멎으면 저장한다
   panel.querySelectorAll('.pn-track').forEach(sec => {
@@ -407,12 +413,25 @@ function isEditingPanel(){
   return !!(panel && panel.contains(el));
 }
 
+/**
+ * 여드름 화면이 기록을 고쳤을 때.
+ *
+ * 하나가 나거나 없어지면 그날 하루가 아니라 그 뒤의 날들이 전부 달라진다 —
+ * 명단에서 빠지거나 더해지기 때문이다. 그래서 이 트랙만은 달력을 통째로 다시
+ * 그린다. 패널은 여드름 화면이 스스로 다시 그렸으니 건드리지 않는다.
+ */
+window.onAcneWrite = () => {
+  renderCalendar();
+  const mark = $('tsaved-acne');
+  if(mark){ mark.textContent = '저장됨'; setTimeout(() => { if(mark) mark.textContent = ''; }, 1600); }
+};
+
 /** 트랙 배지만 즉석 갱신 — 입력 중 전체 재렌더로 포커스를 잃지 않게 */
 function updateCellBadges(ds){
   const cell = document.querySelector('.cal-cell[data-ds="' + ds + '"]');
   if(!cell) return;
   const badges = cellTracks()
-    .map(t => t.cell(DiaryStore.getTrack(ds, t.id)))
+    .map(t => t.cell(DiaryStore.getTrack(ds, t.id), ds))
     .filter(c => c && c.badge);
   let row = cell.querySelector('.cal-badges');
   if(!badges.length){ if(row) row.remove(); return; }

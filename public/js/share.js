@@ -199,6 +199,11 @@ function mdEvents(f, val){
   const list = Array.isArray(val) ? val : [];
   const unit = f.unit || '회';
   const out = [`  - ${f.label}: 총 ${list.length}${unit}`];
+  // 시계가 아예 없는 목록도 있다(여드름은 난 날까지만 안다). 그럴 땐 "시간 미기록"을
+  // 줄줄이 달지 않는다 — 안 적은 게 아니라 적을 자리가 없는 것이다.
+  // 이건 데이터가 아니라 **선언**이 정한다. 마침 시간을 하나도 안 적은 날과,
+  // 애초에 시간을 받지 않는 기록은 다른 이야기다.
+  const hasClock = f.at !== false;
   list.forEach((ev, i) => {
     const e = ev || {};
     const bits = [];
@@ -209,7 +214,7 @@ function mdEvents(f, val){
       const txt = DiaryTracks.fieldText(sf, e[k]);
       if(txt !== '') bits.push(`${sf ? sf.label : k}: ${txt}`);
     }
-    out.push(`    - ${i + 1}번째${e.at ? ' ' + e.at : ' (시간 미기록)'}` +
+    out.push(`    - ${i + 1}번째${e.at ? ' ' + e.at : (hasClock ? ' (시간 미기록)' : '')}` +
       (bits.length ? ' — ' + bits.join(', ') : ''));
   });
   return out;

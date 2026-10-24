@@ -267,6 +267,11 @@ function stoolCount(v){
 const ST_SHAPE = ['count', 'log.at', 'log.type', 'log.blood', 'log.mucus', 'log.pain', 'log.tenes',
                   'type', 'blood'];
 
+// 여드름 공개 수준의 바닥. 사람이 읽는 번호가 먼저고, 식별자가 뒤따른다.
+// 번호만으로는 "3번이 사라졌다"를 이을 수 없다 — gone이 식별자로 적히기 때문에
+// 어느 수준에서든 식별자가 같이 나가야 난 것과 진 것이 이어진다.
+const AC_BASE = ['add.no', 'add.id', 'gone'];
+
 const TRACKS = [
   {
     id: 'route',
@@ -360,6 +365,70 @@ const TRACKS = [
       const rows = [{ k: '피부 기록', v: days.length + '일' }];
       if(shots) rows.push({ k: '피부 사진', v: shots + '장' });
       if(itch)  rows.push({ k: '간지러운 날', v: itch + '일' });
+      return rows;
+    },
+  },
+  {
+    id: 'acne',
+    name: '여드름',
+    icon: '🔴',
+    desc: '하나하나에 번호를 붙여 난 날부터 없어진 날까지 쫓습니다',
+    // 전용 화면. 얼굴 그림 위에 자리를 찍는 일은 칸으로는 받을 수 없다.
+    view: 'acne',
+    // 아래 선언은 폼을 그리려는 게 아니라(전부 hidden) 공개본·Markdown·사전이
+    // 저장된 모양을 사람 말로 옮길 수 있게 적어 둔 것이다. 여드름 하나하나는
+    // 사건 목록(events)과 생김새가 같아서 그 타입을 그대로 쓴다.
+    fields: [
+      { key: 'add', type: 'events', hidden: true, label: '이 날 난 여드름', unit: '개',
+        at: false,                      // 여드름은 난 '날'까지만 안다 — 시계가 없다
+        fields: [
+          { key: 'no',   type: 'number', label: '번호' },
+          { key: 'type', type: 'choice', label: '종류', options: DiaryAcne.TYPES },
+          { key: 'itch', type: 'bool',   label: '😣 간지러움' },
+          { key: 'note', type: 'text',   label: '특이사항' },
+          { key: 'x',    type: 'number', label: '가로 위치 (0~1, 왼쪽이 0)' },
+          { key: 'y',    type: 'number', label: '세로 위치 (0~1, 이마가 0)' },
+          { key: 'id',   type: 'text',   label: '식별자' },
+        ] },
+      { key: 'gone', type: 'text', hidden: true, label: '이 날 없어진 여드름 (식별자)' },
+    ],
+    cell(v, ds){
+      // 그날 얼굴에 있던 개수다. 이 트랙만은 그날 적은 것이 아니라 그날의 상태를
+      // 보여야 한다 — 난 날과 진 날 사이는 아무것도 안 적어도 계속 있는 것이다.
+      if(!ds || !window.DiaryAcne) return null;
+      const n = DiaryAcne.liveOn(ds).length;
+      return n ? { badge: n + '개' } : null;
+    },
+    share: [
+      { id: 'count', name: '개수만', fields: AC_BASE, recommended: true },
+      { id: 'type',  name: '종류까지', fields: AC_BASE.concat(['add.type', 'add.itch']) },
+      { id: 'where', name: '위치까지', fields: AC_BASE.concat(['add.type', 'add.itch', 'add.x', 'add.y']),
+        desc: '얼굴 어디에 났는지가 함께 나갑니다' },
+      { id: 'all', name: '특이사항까지',
+        fields: AC_BASE.concat(['add.type', 'add.itch', 'add.x', 'add.y', 'add.note']),
+        sensitive: true, desc: '여드름마다 적은 특이사항이 함께 나갑니다' },
+    ],
+    summary(entries){
+      if(!window.DiaryAcne) return null;
+      // 공개본에서는 그 파일에 담긴 날만 들어온다. 명단은 기기에 있는 전체를
+      // 보므로, 여기서는 들어온 날에 적힌 것만 세어 "담긴 것 기준"을 지킨다.
+      let born = 0, gone = 0;
+      entries.forEach(e => {
+        born += ((e.v || {}).add || []).length;
+        gone += ((e.v || {}).gone || []).length;
+      });
+      if(!born && !gone) return null;
+      const rows = [];
+      if(born) rows.push({ k: '새로 난 것', v: born + '개' });
+      if(gone) rows.push({ k: '사라진 것', v: gone + '개' });
+      // 평균 수명은 난 날과 진 날이 둘 다 있어야 나온다 — 기기의 명단에서만
+      const done = DiaryAcne.roster().filter(s => s.gone);
+      if(done.length){
+        const avg = done.reduce((n, s) => n + DiaryAcne.lived(s), 0) / done.length;
+        rows.push({ k: '평균 수명', v: avg.toFixed(1).replace(/\.0$/, '') + '일' });
+      }
+      const live = DiaryAcne.roster().filter(s => !s.gone).length;
+      if(live) rows.push({ k: '아직 있는 것', v: live + '개' });
       return rows;
     },
   },
@@ -881,8 +950,9 @@ function evHtml(f, ev, open){
   return `<div class="tf-ev${open ? ' open' : ''}">` +
     `<div class="tf-ev-hdr">` +
       `<span class="tf-ev-no"></span>` +
-      `<input type="time" class="tf-ev-at" value="${escapeHtml(e.at || '')}" ` +
-        `aria-label="${escapeHtml(item)} 시간">` +
+      (f.at === false ? '' :
+        `<input type="time" class="tf-ev-at" value="${escapeHtml(e.at || '')}" ` +
+          `aria-label="${escapeHtml(item)} 시간">`) +
       `<button type="button" class="tf-ev-open" aria-expanded="${open ? 'true' : 'false'}">` +
         `<span class="tf-ev-sum"></span><span class="tf-ev-caret" aria-hidden="true">▾</span>` +
       `</button>` +
@@ -903,7 +973,9 @@ function fieldText(f, val){
     return list.length + (f.unit || '회') + (at.length ? ` (${at.join(', ')})` : '');
   }
   if(f && f.type === 'tags') return toTags(val).map(tagLabel).join(', ');
-  if(Array.isArray(val)) return `사진 ${val.length}장`;
+  // 배열이라고 다 사진이 아니다 — 여드름의 '이 날 없어진 것'은 식별자 목록이다.
+  // 선언이 사진이라고 했을 때만(또는 선언을 아예 못 찾았을 때만) 장수로 읽는다.
+  if(Array.isArray(val)) return (!f || f.type === 'photo') ? `사진 ${val.length}장` : val.join(', ');
   if(!f) return String(val);
   if(f.type === 'bool')   return val ? '예' : '아니오';
   if(f.type === 'choice'){
@@ -1299,7 +1371,8 @@ function wireFields(box, track, onChange){
     evReads.set(el, () => rows().map(r => {
       const sub = subs.get(r);
       const o = (sub && sub.read()) || {};
-      const at = r.querySelector('.tf-ev-at').value;
+      const atEl = r.querySelector('.tf-ev-at');
+      const at = atEl ? atEl.value : '';
       // 시간을 앞에 둔다 — 저장된 걸 그대로 읽을 때 언제 일이었는지가 먼저 나온다
       return at ? { at, ...o } : { ...o };
     }).sort(evOrder));
@@ -1309,7 +1382,8 @@ function wireFields(box, track, onChange){
       // read()가 한 번에 모아 간다.
       subs.set(r, wireFields(r.querySelector('.tf-ev-body'), { fields: f.fields },
         () => { paint(); now(); }));
-      r.querySelector('.tf-ev-at').addEventListener('change', now);
+      const atEl = r.querySelector('.tf-ev-at');
+      if(atEl) atEl.addEventListener('change', now);
       const openBtn = r.querySelector('.tf-ev-open');
       openBtn.addEventListener('click', () => {
         const on = !r.classList.contains('open');
@@ -1320,7 +1394,7 @@ function wireFields(box, track, onChange){
       });
       r.querySelector('.tf-ev-x').addEventListener('click', () => {
         const sub = subs.get(r);
-        const filled = !!(sub && sub.read()) || !!r.querySelector('.tf-ev-at').value;
+        const filled = !!(sub && sub.read()) || !!(atEl && atEl.value);
         if(filled && !confirm(`이 ${f.item || '기록'}을 지울까요?`)) return;
         // 사진은 여기서 같이 치운다. 칸이 사라지면 아무 데서도 안 걸리는 사진이
         // 저장소에 남는다.
