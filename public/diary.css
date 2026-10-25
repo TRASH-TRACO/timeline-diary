@@ -433,16 +433,29 @@ code{font-family:var(--font-mono);font-size:.92em;background:var(--bg3);padding:
 .ac-line{fill:none;stroke:var(--text3);stroke-width:1.1;stroke-linecap:round;opacity:.75;}
 .ac-hint{margin-top:6px;text-align:center;font-size:10.5px;color:var(--text3);}
 
-.ac-dot{cursor:pointer;}
-.ac-dot-c{stroke:var(--bg);stroke-width:1.2;transition:r .12s;}
-.ac-dot:hover .ac-dot-c,.ac-dot:focus-visible .ac-dot-c{r:5.6;}
-.ac-dot.on .ac-dot-c{stroke:var(--accent);stroke-width:1.8;}
-.ac-dot.gone{opacity:.4;}
-.ac-dot-n{font-size:4.6px;font-family:var(--font-mono);font-weight:700;fill:#fff;
-  text-anchor:middle;pointer-events:none;}
+/* 표시는 작게, 과녁은 크게. 하나로 묶으면 손가락에 맞춘 동그라미가 정작
+   가리켜야 할 자리를 덮는다 */
+.ac-dot{cursor:grab;touch-action:none;}
+.ac-dot.moving{cursor:grabbing;}
+.ac-hit{fill:#fff;fill-opacity:0;pointer-events:all;}   /* 손가락이 잡는 자리 */
+.ac-ring{fill:none;stroke-width:1.1;pointer-events:none;transition:r .12s,stroke-width .12s;}
+.ac-pin{stroke:none;pointer-events:none;}               /* 정확히 그 자리 */
+.ac-dot:hover .ac-ring,.ac-dot:focus-visible .ac-ring{r:4;}
+.ac-dot.on .ac-ring{stroke:var(--accent);stroke-width:1.7;r:4;}
+.ac-dot.on .ac-pin{fill:var(--accent);}
+.ac-dot.moving .ac-ring{stroke-width:1.7;r:4.6;}
+.ac-dot.gone{opacity:.45;}
+/* 번호는 표시 옆에. 얼굴 위에서도 읽히게 테두리를 먼저 깔고 글자를 얹는다 */
+.ac-dot-n{font-size:3.7px;font-family:var(--font-mono);font-weight:700;fill:var(--text2);
+  stroke:var(--bg3);stroke-width:1.1;paint-order:stroke;
+  text-anchor:start;pointer-events:none;}
+.ac-dot-n.left{text-anchor:end;}
+.ac-dot.on .ac-dot-n{fill:var(--accent);}
 /* 좁쌀은 옅게, 염증성은 붉게 — 색이 곧 종류라 목록을 안 봐도 읽힌다 */
 .ac-t-c{fill:var(--slate-400);}
 .ac-t-i{fill:var(--red);}
+.ac-s-c{stroke:var(--slate-400);}
+.ac-s-i{stroke:var(--red);}
 
 .ac-sum{display:flex;flex-wrap:wrap;gap:10px;font-size:11px;color:var(--text3);margin-bottom:8px;}
 .ac-sum b{color:var(--text);font-family:var(--font-mono);font-weight:600;}

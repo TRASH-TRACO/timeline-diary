@@ -98,8 +98,8 @@ async function acAdd(ds, spot){
   const d = acDayOf(ds);
   const s = {
     id: acNewId(), no: acNextNo(), type: AC_TYPES[0].v,
-    x: Math.round((spot.x || .5) * 1000) / 1000,
-    y: Math.round((spot.y || .5) * 1000) / 1000,
+    x: Math.round(Math.min(1, Math.max(0, spot.x == null ? .5 : spot.x)) * 1000) / 1000,
+    y: Math.round(Math.min(1, Math.max(0, spot.y == null ? .5 : spot.y)) * 1000) / 1000,
   };
   await acSave(ds, { ...d, add: (d.add || []).concat([s]) });
   return s;
@@ -167,17 +167,45 @@ const AC_VB = { x: 14, y: 4, w: 72, h: 91 };
 const acCx = x => AC_VB.x + x * AC_VB.w;
 const acCy = y => AC_VB.y + y * AC_VB.h;
 
-/** 얼굴 + 그날의 점들 */
+/**
+ * 얼굴 + 그날의 점들.
+ *
+ * 표시와 과녁을 따로 둔다. 하나로 묶으면 손가락에 맞춰 키운 동그라미가 정작
+ * 가리켜야 할 자리를 통째로 덮어서, 턱선인지 턱 한가운데인지가 안 보인다.
+ * 그래서 눈에 보이는 건 가는 테두리와 가운데 한 점으로 줄이고(어디인지 정확히
+ * 보인다), 누르고 끄는 과녁은 그보다 훨씬 큰 투명 원이 맡는다(누르기 쉽다).
+ */
 function acFaceSvg(live, sel){
-  const dots = live.map(s =>
-    `<g class="ac-dot${s.id === sel ? ' on' : ''}${s.gone ? ' gone' : ''}" data-id="${escapeHtml(s.id)}" ` +
+  const dots = live.map(s => {
+    const cx = acCx(s.x).toFixed(2), cy = acCy(s.y).toFixed(2);
+    const t = escapeHtml(s.type || 'c');
+    return `<g class="ac-dot${s.id === sel ? ' on' : ''}${s.gone ? ' gone' : ''}" ` +
+        `data-id="${escapeHtml(s.id)}" data-x="${s.x}" data-y="${s.y}" ` +
         `tabindex="0" role="button" aria-label="${s.no}번 ${escapeHtml((acTypeOf(s.type) || {}).name || '')}">` +
-      `<circle class="ac-dot-c ac-t-${escapeHtml(s.type || 'c')}" ` +
-        `cx="${acCx(s.x).toFixed(2)}" cy="${acCy(s.y).toFixed(2)}" r="4.6"/>` +
-      `<text class="ac-dot-n" x="${acCx(s.x).toFixed(2)}" y="${(acCy(s.y) + 2).toFixed(2)}">${s.no}</text>` +
-    `</g>`).join('');
+      `<circle class="ac-hit" cx="${cx}" cy="${cy}" r="6.4"/>` +
+      `<circle class="ac-ring ac-s-${t}" cx="${cx}" cy="${cy}" r="3.1"/>` +
+      `<circle class="ac-pin ac-t-${t}" cx="${cx}" cy="${cy}" r="1.15"/>` +
+      // 번호는 표시 옆으로 비켜 세운다. 안에 넣으려면 동그라미가 글자만큼
+      // 커져야 하고, 그 순간 다시 뭉툭해진다.
+      // 오른쪽 끝에 난 것은 번호를 왼쪽에 단다 — 안 그러면 그림 밖으로 잘린다.
+      `<text class="ac-dot-n${s.x > .72 ? ' left' : ''}" ` +
+        `x="${(+cx + (s.x > .72 ? -4.4 : 4.4)).toFixed(2)}" y="${(+cy - 2.6).toFixed(2)}">${s.no}</text>` +
+    `</g>`;
+  }).join('');
   return `<svg class="ac-svg" viewBox="${AC_VB.x} ${AC_VB.y} ${AC_VB.w} ${AC_VB.h}" role="img" ` +
       `aria-label="얼굴 그림. 여드름 ${live.length}개">${AC_FACE}${dots}</svg>`;
+}
+
+/** 끄는 동안 점을 따라 움직인다 — 저장은 손을 뗄 때 한 번 */
+function acMoveDot(g, p){
+  const cx = acCx(p.x).toFixed(2), cy = acCy(p.y).toFixed(2);
+  g.querySelectorAll('circle').forEach(c => { c.setAttribute('cx', cx); c.setAttribute('cy', cy); });
+  const n = g.querySelector('.ac-dot-n');
+  const left = p.x > .72;
+  n.classList.toggle('left', left);
+  n.setAttribute('x', (+cx + (left ? -4.4 : 4.4)).toFixed(2));
+  n.setAttribute('y', (+cy - 2.6).toFixed(2));
+  g.dataset.x = p.x; g.dataset.y = p.y;
 }
 
 // ── 화면 ────────────────────────────────────
@@ -192,7 +220,7 @@ function acRender(box, ds){
 
   box.innerHTML =
     `<div class="ac-map">${acFaceSvg(shown, _acSel)}` +
-      `<div class="ac-hint">얼굴을 누르면 그 자리에 하나 생깁니다</div>` +
+      `<div class="ac-hint">얼굴을 누르면 하나 생깁니다 · 점을 끌어 자리를 맞출 수 있어요</div>` +
     `</div>` +
     `<div class="ac-side">` +
       `<div class="ac-sum">${acDaySum(ds, live, gone)}</div>` +
@@ -245,20 +273,83 @@ function acWire(box, ds){
   const redraw = () => acRender(box, ds);
   const svg = box.querySelector('.ac-svg');
 
-  // 얼굴을 누르면 그 자리에 하나. 모드를 따로 두지 않는다 — 더하기 버튼을 누르고
-  // 다시 자리를 누르는 두 걸음보다, 바로 누르는 한 걸음이 낫다.
-  svg.addEventListener('click', async e => {
-    const hit = e.target.closest('.ac-dot');
-    if(hit){ _acSel = _acSel === hit.dataset.id ? null : hit.dataset.id; redraw(); return; }
+  /** 화면 좌표 → 얼굴 좌표(0~1). 끌다가 바깥으로 나가도 얼굴 안에 붙잡아 둔다. */
+  const pos = e => {
     const r = svg.getBoundingClientRect();
-    const s = await acAdd(ds, { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height });
+    const f = (v, len) => Math.min(1, Math.max(0, v / len));
+    return { x: f(e.clientX - r.left, r.width), y: f(e.clientY - r.top, r.height) };
+  };
+  const round = p => ({ x: Math.round(p.x * 1000) / 1000, y: Math.round(p.y * 1000) / 1000 });
+
+  // 처음 찍을 때 자리를 딱 맞추기는 어렵다 — 손가락이 과녁을 가리기 때문이다.
+  // 그래서 대충 찍고 **끌어서 맞춘다**. 손을 떼는 순간의 자리가 저장된다.
+  const DRAG_MIN = 0.012;               // 이만큼은 움직여야 '옮기는 중'으로 본다
+  let drag = null;
+  // 끌고 나면 브라우저가 click을 하나 더 보낸다. 포인터를 svg에 붙잡아 둔
+  // 탓에 그 click의 대상은 점이 아니라 svg여서, 그냥 두면 손을 뗀 자리에
+  // 여드름이 하나 새로 생긴다. 시각으로 걸러낸다 — 깃발로 걸면 click이 안 오는
+  // 경우에 깃발이 올라간 채 남아 다음 누르기를 먹는다.
+  let dragEndAt = 0;
+
+  svg.addEventListener('pointerdown', e => {
+    const g = e.target.closest('.ac-dot');
+    if(!g) return;
+    e.preventDefault();
+    drag = { id: g.dataset.id, g, from: pos(e), at: null, moved: false };
+    try{ svg.setPointerCapture(e.pointerId); }catch(_){}
+  });
+  svg.addEventListener('pointermove', e => {
+    if(!drag) return;
+    const p = pos(e);
+    if(!drag.moved && Math.hypot(p.x - drag.from.x, p.y - drag.from.y) < DRAG_MIN) return;
+    drag.moved = true;
+    drag.at = p;
+    drag.g.classList.add('moving');
+    acMoveDot(drag.g, p);
+  });
+  const endDrag = async e => {
+    if(!drag) return;
+    const d = drag;
+    drag = null;
+    try{ svg.releasePointerCapture(e.pointerId); }catch(_){}
+    d.g.classList.remove('moving');
+    if(!d.moved){                        // 그냥 누른 것 — 펴거나 접는다
+      _acSel = _acSel === d.id ? null : d.id;
+      redraw();
+      return;
+    }
+    // 옮기기만 한 것은 목록에 보일 게 없다. 다시 그리지 않으면 끌던 자리가
+    // 그대로 남아 깜빡이지 않는다.
+    dragEndAt = Date.now();
+    await acEdit(d.id, round(d.at));
+    acAfterWrite(ds);
+  };
+  svg.addEventListener('pointerup', endDrag);
+  svg.addEventListener('pointercancel', () => {
+    if(drag){ drag.g.classList.remove('moving'); redraw(); }
+    drag = null;
+  });
+
+  // 빈 자리를 누르면 그 자리에 하나. 모드를 따로 두지 않는다 — 더하기 버튼을
+  // 누르고 다시 자리를 누르는 두 걸음보다, 바로 누르는 한 걸음이 낫다.
+  // 점 위에서 일어난 일은 위의 pointer 쪽이 이미 끝냈다.
+  svg.addEventListener('click', async e => {
+    if(Date.now() - dragEndAt < 250) return;      // 방금 끌고 난 뒤의 click
+    if(e.target.closest('.ac-dot')) return;
+    const s = await acAdd(ds, round(pos(e)));
     _acSel = s.id;
     redraw();
     acAfterWrite(ds);
   });
-  box.querySelectorAll('.ac-dot').forEach(g => g.addEventListener('keydown', e => {
-    if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); g.dispatchEvent(new MouseEvent('click', { bubbles: true })); }
-  }));
+  box.querySelectorAll('.ac-dot').forEach(g => {
+    g.addEventListener('keydown', e => {
+      if(e.key === 'Enter' || e.key === ' '){
+        e.preventDefault();
+        _acSel = _acSel === g.dataset.id ? null : g.dataset.id;
+        redraw();
+      }
+    });
+  });
 
   box.querySelectorAll('.ac-row').forEach(row => {
     const id = row.dataset.id;
