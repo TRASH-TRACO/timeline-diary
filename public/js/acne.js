@@ -168,6 +168,19 @@ const acCx = x => AC_VB.x + x * AC_VB.w;
 const acCy = y => AC_VB.y + y * AC_VB.h;
 
 /**
+ * 표시의 크기.
+ *
+ * viewBox 단위라 그림을 키우면 표시도 같이 커진다. 얼굴을 200px에서 340px로
+ * 키우면서 이 숫자를 그대로 뒀다면, 애써 가늘게 만든 점이 1.7배로 돌아왔을
+ * 것이다. 그래서 그림이 커진 만큼 줄여 **화면에 보이는 크기**를 지킨다.
+ *
+ *   340px 기준 — 가운데 점 ⌀7px · 과녁 ⌀41px · 번호 13px
+ *
+ * 과녁(hit)만은 손가락이 기준이라 넉넉히 둔다. 보이지 않으니 커도 방해가 안 된다.
+ */
+const AC_R = { hit: 4.6, ring: 2.2, pin: .8, lbl: 3.2, lblUp: 2 };
+
+/**
  * 얼굴 + 그날의 점들.
  *
  * 표시와 과녁을 따로 둔다. 하나로 묶으면 손가락에 맞춰 키운 동그라미가 정작
@@ -182,14 +195,15 @@ function acFaceSvg(live, sel){
     return `<g class="ac-dot${s.id === sel ? ' on' : ''}${s.gone ? ' gone' : ''}" ` +
         `data-id="${escapeHtml(s.id)}" data-x="${s.x}" data-y="${s.y}" ` +
         `tabindex="0" role="button" aria-label="${s.no}번 ${escapeHtml((acTypeOf(s.type) || {}).name || '')}">` +
-      `<circle class="ac-hit" cx="${cx}" cy="${cy}" r="6.4"/>` +
-      `<circle class="ac-ring ac-s-${t}" cx="${cx}" cy="${cy}" r="3.1"/>` +
-      `<circle class="ac-pin ac-t-${t}" cx="${cx}" cy="${cy}" r="1.15"/>` +
+      `<circle class="ac-hit" cx="${cx}" cy="${cy}" r="${AC_R.hit}"/>` +
+      `<circle class="ac-ring ac-s-${t}" cx="${cx}" cy="${cy}" r="${AC_R.ring}"/>` +
+      `<circle class="ac-pin ac-t-${t}" cx="${cx}" cy="${cy}" r="${AC_R.pin}"/>` +
       // 번호는 표시 옆으로 비켜 세운다. 안에 넣으려면 동그라미가 글자만큼
       // 커져야 하고, 그 순간 다시 뭉툭해진다.
       // 오른쪽 끝에 난 것은 번호를 왼쪽에 단다 — 안 그러면 그림 밖으로 잘린다.
       `<text class="ac-dot-n${s.x > .72 ? ' left' : ''}" ` +
-        `x="${(+cx + (s.x > .72 ? -4.4 : 4.4)).toFixed(2)}" y="${(+cy - 2.6).toFixed(2)}">${s.no}</text>` +
+        `x="${(+cx + (s.x > .72 ? -AC_R.lbl : AC_R.lbl)).toFixed(2)}" ` +
+        `y="${(+cy - AC_R.lblUp).toFixed(2)}">${s.no}</text>` +
     `</g>`;
   }).join('');
   return `<svg class="ac-svg" viewBox="${AC_VB.x} ${AC_VB.y} ${AC_VB.w} ${AC_VB.h}" role="img" ` +
@@ -203,8 +217,8 @@ function acMoveDot(g, p){
   const n = g.querySelector('.ac-dot-n');
   const left = p.x > .72;
   n.classList.toggle('left', left);
-  n.setAttribute('x', (+cx + (left ? -4.4 : 4.4)).toFixed(2));
-  n.setAttribute('y', (+cy - 2.6).toFixed(2));
+  n.setAttribute('x', (+cx + (left ? -AC_R.lbl : AC_R.lbl)).toFixed(2));
+  n.setAttribute('y', (+cy - AC_R.lblUp).toFixed(2));
   g.dataset.x = p.x; g.dataset.y = p.y;
 }
 
@@ -283,7 +297,11 @@ function acWire(box, ds){
 
   // 처음 찍을 때 자리를 딱 맞추기는 어렵다 — 손가락이 과녁을 가리기 때문이다.
   // 그래서 대충 찍고 **끌어서 맞춘다**. 손을 떼는 순간의 자리가 저장된다.
-  const DRAG_MIN = 0.012;               // 이만큼은 움직여야 '옮기는 중'으로 본다
+  // 손가락이 흔들린 것과 옮기려는 뜻을 가르는 선. **화면의 픽셀**로 잰다 —
+  // 얼굴 너비의 몇 분의 일로 재면 그림을 키운 날 같은 손짓이 안 먹는다.
+  // 한 번 '옮기는 중'이 되면 그 뒤로는 손끝을 그대로 따라가므로, 이 선은
+  // 미세조정을 막지 않는다. 넘겼다가 되돌아와도 된다.
+  const DRAG_MIN_PX = 5;
   let drag = null;
   // 끌고 나면 브라우저가 click을 하나 더 보낸다. 포인터를 svg에 붙잡아 둔
   // 탓에 그 click의 대상은 점이 아니라 svg여서, 그냥 두면 손을 뗀 자리에
@@ -295,13 +313,14 @@ function acWire(box, ds){
     const g = e.target.closest('.ac-dot');
     if(!g) return;
     e.preventDefault();
-    drag = { id: g.dataset.id, g, from: pos(e), at: null, moved: false };
+    drag = { id: g.dataset.id, g, fromPx: { x: e.clientX, y: e.clientY }, at: null, moved: false };
     try{ svg.setPointerCapture(e.pointerId); }catch(_){}
   });
   svg.addEventListener('pointermove', e => {
     if(!drag) return;
+    if(!drag.moved &&
+       Math.hypot(e.clientX - drag.fromPx.x, e.clientY - drag.fromPx.y) < DRAG_MIN_PX) return;
     const p = pos(e);
-    if(!drag.moved && Math.hypot(p.x - drag.from.x, p.y - drag.from.y) < DRAG_MIN) return;
     drag.moved = true;
     drag.at = p;
     drag.g.classList.add('moving');

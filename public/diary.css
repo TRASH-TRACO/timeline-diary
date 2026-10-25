@@ -424,10 +424,12 @@ code{font-family:var(--font-mono);font-size:.92em;background:var(--bg3);padding:
 /* ── 여드름 ── */
 /* 얼굴 그림과 목록을 나란히. 좁으면 그림이 위로 간다 — 자리를 찍는 일에는
    손가락이 닿을 만큼의 크기가 필요해서 그림을 먼저 넓게 준다 */
-.pn-acne{display:grid;grid-template-columns:minmax(0,210px) minmax(0,1fr);gap:16px;align-items:start;}
+/* 자리를 찍는 일에는 큰 그림이 필요하다. 손가락이 과녁을 가리는 데다, 얼굴이
+   클수록 같은 1px이 가리키는 얼굴 면적이 작아진다 */
+.pn-acne{display:grid;grid-template-columns:minmax(0,340px) minmax(0,1fr);gap:18px;align-items:start;}
 @media (max-width:620px){ .pn-acne{grid-template-columns:1fr;} }
 .ac-map{position:relative;}
-.ac-svg{display:block;width:100%;max-width:200px;margin:0 auto;cursor:crosshair;
+.ac-svg{display:block;width:100%;max-width:340px;margin:0 auto;cursor:crosshair;
   touch-action:manipulation;}
 .ac-skin{fill:var(--bg3);stroke:var(--border2);stroke-width:1.1;}
 .ac-line{fill:none;stroke:var(--text3);stroke-width:1.1;stroke-linecap:round;opacity:.75;}
@@ -438,16 +440,16 @@ code{font-family:var(--font-mono);font-size:.92em;background:var(--bg3);padding:
 .ac-dot{cursor:grab;touch-action:none;}
 .ac-dot.moving{cursor:grabbing;}
 .ac-hit{fill:#fff;fill-opacity:0;pointer-events:all;}   /* 손가락이 잡는 자리 */
-.ac-ring{fill:none;stroke-width:1.1;pointer-events:none;transition:r .12s,stroke-width .12s;}
+.ac-ring{fill:none;stroke-width:.8;pointer-events:none;transition:r .12s,stroke-width .12s;}
 .ac-pin{stroke:none;pointer-events:none;}               /* 정확히 그 자리 */
-.ac-dot:hover .ac-ring,.ac-dot:focus-visible .ac-ring{r:4;}
-.ac-dot.on .ac-ring{stroke:var(--accent);stroke-width:1.7;r:4;}
+.ac-dot:hover .ac-ring,.ac-dot:focus-visible .ac-ring{r:2.9;}
+.ac-dot.on .ac-ring{stroke:var(--accent);stroke-width:1.2;r:2.9;}
 .ac-dot.on .ac-pin{fill:var(--accent);}
-.ac-dot.moving .ac-ring{stroke-width:1.7;r:4.6;}
+.ac-dot.moving .ac-ring{stroke-width:1.2;r:3.4;}
 .ac-dot.gone{opacity:.45;}
 /* 번호는 표시 옆에. 얼굴 위에서도 읽히게 테두리를 먼저 깔고 글자를 얹는다 */
-.ac-dot-n{font-size:3.7px;font-family:var(--font-mono);font-weight:700;fill:var(--text2);
-  stroke:var(--bg3);stroke-width:1.1;paint-order:stroke;
+.ac-dot-n{font-size:2.9px;font-family:var(--font-mono);font-weight:700;fill:var(--text2);
+  stroke:var(--bg3);stroke-width:.9;paint-order:stroke;
   text-anchor:start;pointer-events:none;}
 .ac-dot-n.left{text-anchor:end;}
 .ac-dot.on .ac-dot-n{fill:var(--accent);}
