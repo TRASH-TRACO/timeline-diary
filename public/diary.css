@@ -419,6 +419,8 @@ code{font-family:var(--font-mono);font-size:.92em;background:var(--bg3);padding:
   border:1px dashed var(--border2);border-radius:var(--r2);background:var(--bg2);transition:all .12s;}
 .tf-shot-add span{font-size:10px;}
 .tf-shot-add:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-bg);}
+/* display:flex가 [hidden]을 이긴다. 숨기라고 했으면 숨어야 한다. */
+.tf-shot-add[hidden]{display:none;}
 .tf-shot-msg:not(:empty){font-size:11px;color:var(--text3);margin-top:6px;}
 
 /* ── 여드름 ── */
@@ -493,6 +495,14 @@ code{font-family:var(--font-mono);font-size:.92em;background:var(--bg3);padding:
   border:1px solid var(--border);border-radius:var(--r2);background:var(--bg);
   transition:border-color .12s;margin-bottom:8px;}
 .ac-note:focus{outline:none;border-color:var(--accent);}
+/* 그 여드름의 사진들. 며칠째에 찍은 것인지가 사진만큼 중요하다 */
+.ac-shots{margin-bottom:9px;}
+.ac-shots-t{font-size:11px;font-weight:600;color:var(--text3);margin-bottom:6px;}
+.ac-shot{width:68px;height:68px;}
+.ac-shot-add{width:68px;height:68px;}
+.ac-shot-d{position:absolute;left:0;right:0;bottom:0;padding:2px 0;text-align:center;
+  font-size:9.5px;font-family:var(--font-mono);color:#fff;background:rgba(15,23,42,.62);
+  pointer-events:none;}
 .ac-acts{display:flex;gap:6px;flex-wrap:wrap;}
 .ac-act{padding:5px 12px;font-size:11.5px;font-weight:600;border-radius:100px;cursor:pointer;
   transition:all .12s;border:1px solid var(--border2);background:var(--bg);color:var(--text2);}

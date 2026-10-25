@@ -271,6 +271,7 @@ const ST_SHAPE = ['count', 'log.at', 'log.type', 'log.blood', 'log.mucus', 'log.
 // 번호만으로는 "3번이 사라졌다"를 이을 수 없다 — gone이 식별자로 적히기 때문에
 // 어느 수준에서든 식별자가 같이 나가야 난 것과 진 것이 이어진다.
 const AC_BASE = ['add.no', 'add.id', 'gone'];
+const AC_FULL = ['add.type', 'add.itch', 'add.x', 'add.y', 'add.note'];
 
 const TRACKS = [
   {
@@ -391,6 +392,12 @@ const TRACKS = [
           { key: 'id',   type: 'text',   label: '식별자' },
         ] },
       { key: 'gone', type: 'text', hidden: true, label: '이 날 없어진 여드름 (식별자)' },
+      { key: 'shot', type: 'events', hidden: true, label: '이 날 찍은 사진', unit: '건',
+        at: false,
+        fields: [
+          { key: 'id',     type: 'text',  label: '어느 여드름인지 (식별자)' },
+          { key: 'photos', type: 'photo', label: '사진' },
+        ] },
     ],
     cell(v, ds){
       // 그날 얼굴에 있던 개수다. 이 트랙만은 그날 적은 것이 아니라 그날의 상태를
@@ -405,8 +412,11 @@ const TRACKS = [
       { id: 'where', name: '위치까지', fields: AC_BASE.concat(['add.type', 'add.itch', 'add.x', 'add.y']),
         desc: '얼굴 어디에 났는지가 함께 나갑니다' },
       { id: 'all', name: '특이사항까지',
-        fields: AC_BASE.concat(['add.type', 'add.itch', 'add.x', 'add.y', 'add.note']),
+        fields: AC_BASE.concat(AC_FULL),
         sensitive: true, desc: '여드름마다 적은 특이사항이 함께 나갑니다' },
+      { id: 'photo', name: '사진까지',
+        fields: AC_BASE.concat(AC_FULL, ['shot.id', 'shot.photos']),
+        sensitive: true, desc: '여드름마다 찍은 사진이 함께 나갑니다' },
     ],
     summary(entries){
       if(!window.DiaryAcne) return null;

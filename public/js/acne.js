@@ -19,6 +19,9 @@
 // 언제든 다시 셀 수 있다(roster). 저장은 사실만, 명단은 셈으로.
 
 const AC_TRACK = 'acne';
+// 하루에 한 여드름당 이만큼까지. 같은 날 같은 자리를 열 장 찍어 봐야
+// 나중에 넘겨 보는 일만 늘어난다.
+const AC_SHOT_MAX = 3;
 
 // 종류 — 둘로 나눈다. 더 잘게 쪼개면(면포·구진·농포·결절) 적는 사람이 매번
 // 망설이게 되고, 망설이는 칸은 결국 안 적게 된다.
@@ -49,7 +52,15 @@ function acRoster(){
       (v.add || []).forEach(s => {
         if(!s || !s.id) return;
         const prev = byId.get(s.id);
-        byId.set(s.id, { ...s, born: ds, gone: (prev && prev.gone) || null });
+        byId.set(s.id, { ...s, born: ds,
+          gone: (prev && prev.gone) || null, shots: (prev && prev.shots) || [] });
+      });
+      // 사진은 찍은 날에 적힌다. 여드름의 것이면서 동시에 그날의 것이다 —
+      // 언제 찍었는지를 잃으면 줄어드는 중인지 커지는 중인지를 못 본다.
+      (v.shot || []).forEach(g => {
+        const prev = byId.get(g && g.id);
+        if(!prev || !Array.isArray(g.photos) || !g.photos.length) return;
+        (prev.shots || (prev.shots = [])).push({ ds, photos: g.photos.slice() });
       });
       (v.gone || []).forEach(id => {
         const prev = byId.get(id);
@@ -83,11 +94,13 @@ const acLived = s => (s.gone ? acDays(s.gone, s) : null);
 async function acSave(ds, v){
   const add = (v.add || []).filter(Boolean);
   const gone = (v.gone || []).filter(Boolean);
+  const shot = (v.shot || []).filter(g => g && g.id && (g.photos || []).length);
   // 빈 칸은 아예 적지 않는다. gone:[]를 남겨 두면 공개본과 Markdown에
   // "이 날 없어진 여드름: 없음" 같은 줄이 날마다 따라붙는다.
   const next = {};
   if(add.length) next.add = add;
   if(gone.length) next.gone = gone;
+  if(shot.length) next.shot = shot;
   await DiaryStore.setTrack(ds, AC_TRACK, Object.keys(next).length ? next : null);
   _acCache = null;
 }
@@ -130,10 +143,44 @@ async function acSetGone(ds, id, on){
   const gone = (d.gone || []).filter(x => x !== id);
   await acSave(ds, { ...d, gone: on ? gone.concat([id]) : gone });
 }
+/** 이 날 찍은 사진을 그 여드름에 붙인다 */
+async function acAddShot(ds, id, photoId){
+  const d = acDayOf(ds);
+  const shot = (d.shot || []).map(g => ({ ...g, photos: (g.photos || []).slice() }));
+  const mine = shot.find(g => g.id === id);
+  if(mine){
+    if(mine.photos.length >= AC_SHOT_MAX) return false;
+    mine.photos.push(photoId);
+  }else{
+    shot.push({ id, photos: [photoId] });
+  }
+  await acSave(ds, { ...d, shot });
+  return true;
+}
+/**
+ * 사진을 뗀다. 어느 날 찍힌 것인지는 명단이 안다 — 보고 있는 날이 아니라
+ * 찍힌 날의 기록에서 거둬야 한다.
+ */
+async function acRemoveShot(photoId){
+  const s = acRoster().find(x => (x.shots || []).some(g => g.photos.includes(photoId)));
+  if(!s) return;
+  const g = s.shots.find(g => g.photos.includes(photoId));
+  const d = acDayOf(g.ds);
+  const shot = (d.shot || []).map(x => ({ ...x, photos: (x.photos || []).filter(p => p !== photoId) }));
+  await acSave(g.ds, { ...d, shot });
+  if(window.DiaryPhotos) DiaryPhotos.remove(photoId).catch(() => {});
+}
+
 /** 아예 지운다 — 잘못 찍었을 때. 태어난 날과 없어진 날 양쪽에서 거둔다. */
 async function acRemove(id){
   const s = acRoster().find(x => x.id === id);
   if(!s) return;
+  // 사진부터 거둔다. 남겨 두면 아무 데서도 안 걸린 채 저장소만 먹는다.
+  for(const g of (s.shots || [])){
+    const d = acDayOf(g.ds);
+    await acSave(g.ds, { ...d, shot: (d.shot || []).filter(x => x.id !== id) });
+    if(window.DiaryPhotos) g.photos.forEach(p => DiaryPhotos.remove(p).catch(() => {}));
+  }
   if(s.gone){
     const g = acDayOf(s.gone);
     await acSave(s.gone, { ...g, gone: (g.gone || []).filter(x => x !== id) });
@@ -273,6 +320,7 @@ function acRowHtml(s, ds){
       `<button type="button" class="ac-itch${s.itch ? ' on' : ''}" aria-pressed="${!!s.itch}">😣 간지러움</button>` +
       `<textarea class="ac-note" rows="1" maxlength="200" ` +
         `placeholder="특이사항을 짧게 (짜냈다, 연고 발랐다…)">${escapeHtml(s.note || '')}</textarea>` +
+      acShotsHtml(s, ds) +
       `<div class="ac-acts">` +
         (dead
           ? `<button type="button" class="ac-act back">아직 있어요</button>`
@@ -280,6 +328,33 @@ function acRowHtml(s, ds){
         `<button type="button" class="ac-act del">지우기</button>` +
       `</div>` +
     `</div>` +
+  `</div>`;
+}
+
+/**
+ * 그 여드름의 사진들.
+ *
+ * 며칠째에 찍은 것인지를 같이 적는다. 여드름 사진은 한 장만으로는 할 말이 거의
+ * 없고, 1일째와 6일째를 나란히 놓아야 비로소 줄어드는 중인지 커지는 중인지가
+ * 보인다. 새로 찍는 것은 **보고 있는 날**에 붙는다.
+ */
+function acShotsHtml(s, ds){
+  const shots = (s.shots || []).slice().sort((a, b) => (a.ds < b.ds ? -1 : 1));
+  const today = shots.find(g => g.ds === ds);
+  const full = !!(today && today.photos.length >= AC_SHOT_MAX);
+  const cells = shots.map(g => g.photos.map(pid =>
+    `<div class="tf-shot ac-shot" data-id="${escapeHtml(pid)}">` +
+      `<img alt="" loading="lazy">` +
+      `<button type="button" class="tf-shot-x" title="사진 빼기" aria-label="사진 빼기">✕</button>` +
+      `<span class="ac-shot-d">${acDays(g.ds, s)}일째</span>` +
+    `</div>`).join('')).join('');
+  return `<div class="ac-shots">` +
+    `<div class="ac-shots-t">사진</div>` +
+    `<div class="tf-shots">${cells}` +
+      `<button type="button" class="tf-shot-add ac-shot-add"${full ? ' hidden' : ''}>＋<span>사진</span></button>` +
+    `</div>` +
+    `<input type="file" class="ac-file" accept="image/*" multiple hidden>` +
+    `<div class="tf-shot-msg ac-shot-msg"></div>` +
   `</div>`;
 }
 
@@ -407,6 +482,8 @@ function acWire(box, ds){
       note.addEventListener('input', () => { autoGrow(note); clearTimeout(t); t = setTimeout(push, 500); });
       note.addEventListener('blur', () => { clearTimeout(t); push(); });
     }
+    acWireShots(row, id, ds, redraw);
+
     const act = sel => row.querySelector('.ac-act.' + sel);
     const done = act('done');
     if(done) done.addEventListener('click', async () => {
@@ -427,6 +504,58 @@ function acWire(box, ds){
   });
 }
 
+/** 한 줄 안의 사진 칸 — 넣기·빼기·크게 보기 */
+function acWireShots(row, id, ds, redraw){
+  const wrap = row.querySelector('.ac-shots');
+  if(!wrap) return;
+  const file = wrap.querySelector('.ac-file');
+  const msg  = wrap.querySelector('.ac-shot-msg');
+  const add  = wrap.querySelector('.ac-shot-add');
+
+  // 사진 모듈은 module script라 이 파일보다 늦게 뜬다. 아직이면 비워 두고,
+  // 뜨는 즉시 패널이 다시 그려진다(onPhotosReady).
+  if(window.DiaryPhotos) wrap.querySelectorAll('.ac-shot').forEach(async sh => {
+    const img = sh.querySelector('img');
+    if(img.src) return;
+    const u = await DiaryPhotos.url(sh.dataset.id);
+    if(u) img.src = u; else sh.classList.add('missing');
+  });
+  wrap.querySelectorAll('.ac-shot').forEach(sh => {
+    sh.querySelector('img').addEventListener('click', () => DiaryTracks.openShot(sh.dataset.id));
+    sh.querySelector('.tf-shot-x').addEventListener('click', async e => {
+      e.stopPropagation();
+      await acRemoveShot(sh.dataset.id);
+      redraw();
+      acAfterWrite(ds);
+    });
+  });
+
+  if(add) add.addEventListener('click', () => file.click());
+  file.addEventListener('change', async () => {
+    const files = [...file.files];
+    file.value = '';
+    if(!files.length) return;
+    msg.textContent = '사진 넣는 중…';
+    let failed = '';
+    for(const f of files){
+      try{
+        // 여드름은 가까이서 찍는다. 피부 사진과 같은 해상도로 줄인다.
+        const pid = await DiaryPhotos.add(f, { px: 1600 });
+        if(!(await acAddShot(ds, id, pid))){
+          await DiaryPhotos.remove(pid).catch(() => {});
+          failed = `하루에 ${AC_SHOT_MAX}장까지만 넣을 수 있어요`;
+          break;
+        }
+      }catch(e){ failed = e.message || '사진을 넣지 못했어요'; }
+    }
+    redraw();
+    acAfterWrite(ds);
+    // 다시 그린 뒤라 안내는 새 칸에 적어야 한다
+    const m = document.querySelector('.ac-row[data-id="' + id + '"] .ac-shot-msg');
+    if(m) m.textContent = failed;
+  });
+}
+
 /** 쓰고 난 뒤 바깥 화면 맞추기 — 달력 배지와 달 요약 */
 function acAfterWrite(ds){
   if(typeof window.onAcneWrite === 'function') window.onAcneWrite(ds);
@@ -436,5 +565,6 @@ window.DiaryAcne = {
   TRACK: AC_TRACK, TYPES: AC_TYPES, typeOf: acTypeOf,
   roster: acRoster, liveOn: acLiveOn, goneOn: acGoneOn, days: acDays, lived: acLived,
   add: acAdd, edit: acEdit, setGone: acSetGone, remove: acRemove,
+  addShot: acAddShot, removeShot: acRemoveShot, SHOT_MAX: AC_SHOT_MAX,
   render: acRender, faceSvg: acFaceSvg,
 };
