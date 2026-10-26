@@ -208,10 +208,28 @@ function photoIdsIn(track, v){
 // ── 변 ──────────────────────────────────────
 // 하나하나에 붙는 기록. 피·점액·통증을 한 칸에 묶어 두면 "피는 아닌데 점액만"을
 // 적을 데가 없고, 나중에 어느 쪽이었는지도 알 수 없다.
+// 양과 소요시간. 값을 1·2·3으로 두는 건 글자로 두면 나중에 "많은 쪽이 늘었나"를
+// 물을 수가 없기 때문이다 — 순서가 있는 것은 순서가 있게 적는다.
+const STOOL_AMT = [
+  { v: 1, name: '적음' },
+  { v: 2, name: '중간' },
+  { v: 3, name: '많음' },
+];
+// 변기에 앉아 있던 시간. 오래 걸렸다는 건 힘을 줬다는 뜻이고, 그건 모양이나
+// 횟수와는 따로 쌓이는 신호다.
+const STOOL_DUR = [
+  { v: 1, name: '5분 이내' },
+  { v: 2, name: '5분 초과' },
+];
+
 const STOOL_EV = [
   { key: 'type', type: 'choice', label: '모양 (브리스톨 척도)', options: BRISTOL,
     hint: '1에 가까울수록 단단하고, 7에 가까울수록 묽습니다',
     brief: '형' },                       // 접힌 줄에서는 '4'가 아니라 '4형'
+  { key: 'amt', type: 'choice', label: '양', options: STOOL_AMT,
+    briefPre: '양 ' },                   // 접힌 줄에서 '적음'만 있으면 뭐가 적은지 모른다
+  { key: 'dur', type: 'choice', label: '소요시간', options: STOOL_DUR,
+    hint: '변기에 앉아 있던 시간' },
   { key: 'blood', type: 'bool', label: '🩸 피',   narrow: true },
   { key: 'mucus', type: 'bool', label: '🫧 점액', narrow: true },
   { key: 'pain',  type: 'bool', label: '😖 통증', narrow: true },
@@ -264,7 +282,8 @@ function stoolCount(v){
 }
 // 공개 수준 — 사진과 메모는 따로 둔다. '모양까지'를 골랐다는 이유로 딸려 나가면
 // 안 된다. 예전 모양으로 적힌 날도 같이 나가야 하니 예전 칸(type·blood…)도 적는다.
-const ST_SHAPE = ['count', 'log.at', 'log.type', 'log.blood', 'log.mucus', 'log.pain', 'log.tenes',
+const ST_SHAPE = ['count', 'log.at', 'log.type', 'log.amt', 'log.dur',
+                  'log.blood', 'log.mucus', 'log.pain', 'log.tenes',
                   'type', 'blood'];
 
 // 여드름 공개 수준의 바닥. 사람이 읽는 번호가 먼저고, 식별자가 뒤따른다.
@@ -576,19 +595,21 @@ const TRACKS = [
       if(total) rows.push({ k: '하루 평균', v: (total / days.length).toFixed(1).replace(/\.0$/, '') + '회' });
       // 모양과 증상은 '며칠'이 아니라 '몇 번'으로 센다. 하루에 세 번 묽었으면
       // 그건 하루가 아니라 세 번이다 — 그 차이가 바로 이 모양으로 바꾼 이유다.
-      let hard = 0, soft = 0, blood = 0, pain = 0, tenes = 0;
+      let hard = 0, soft = 0, blood = 0, pain = 0, tenes = 0, slow = 0;
       days.forEach(e => stoolLog(e.v).forEach(x => {
         if(x.type <= 2) hard++;
         if(x.type >= 6) soft++;
         if(x.blood || x.mucus) blood++;
         if(x.pain) pain++;
         if(x.tenes) tenes++;
+        if(x.dur === 2) slow++;
       }));
       if(hard)  rows.push({ k: '단단한 변', v: hard + '번' });
       if(soft)  rows.push({ k: '무른 변', v: soft + '번' });
       if(blood) rows.push({ k: '피·점액', v: blood + '번' });
       if(pain)  rows.push({ k: '통증', v: pain + '번' });
       if(tenes) rows.push({ k: '잔변감', v: tenes + '번' });
+      if(slow)  rows.push({ k: '5분 초과', v: slow + '번' });
       return rows;
     },
   },
@@ -866,12 +887,15 @@ function fieldsHtml(track, val){
       const sel = (f.options || []).find(o => o.v === cur);
       const opts = (f.options || []).map(o =>
         `<button type="button" class="tf-opt${o.v === cur ? ' on' : ''}" data-v="${o.v}" ` +
+          `data-d="${escapeHtml(o.desc || '')}" ` +
           `title="${escapeHtml(o.desc || o.name)}">${escapeHtml(o.name)}</button>`).join('');
       return `<div class="tf" data-key="${f.key}" data-type="choice" ` +
           `data-v="${cur == null ? '' : escapeHtml(String(cur))}" data-hint="${escapeHtml(f.hint || '')}">` +
         `<label class="tf-label">${escapeHtml(f.label)}</label>` +
         `<div class="tf-opts">${opts}</div>` +
-        `<div class="tf-opt-d">${escapeHtml(sel ? (sel.desc || sel.name) : (f.hint || ''))}</div>` +
+        // 설명은 이름만으로 모자랄 때만. 고른 단추가 이미 '중간'이라고 말하는데
+        // 그 밑에 또 '중간'을 적으면 읽을 것 없는 줄만 는다.
+        `<div class="tf-opt-d">${escapeHtml((sel && sel.desc) || f.hint || '')}</div>` +
       `</div>`;
     }
     if(f.type === 'events'){
@@ -926,7 +950,9 @@ function evBrief(f, v){
     if(sf.type === 'photo'){ bits.push('📷 ' + x.length); continue; }
     if(sf.type === 'choice'){
       const o = (sf.options || []).find(y => y.v === x);
-      bits.push((o ? o.name : x) + (sf.brief || ''));
+      // 고른 말만 덜렁 두면 무엇에 대한 답인지 모를 때가 있다 ('적음'). 그럴 때
+      // 선언이 앞뒤에 한 마디를 보탠다.
+      bits.push((sf.briefPre || '') + (o ? o.name : x) + (sf.brief || ''));
       continue;
     }
     if(sf.type === 'text'){
@@ -1101,7 +1127,7 @@ function wireFields(box, track, onChange){
       const off = el.dataset.v === b.dataset.v;
       el.dataset.v = off ? '' : b.dataset.v;
       el.querySelectorAll('.tf-opt').forEach(x => x.classList.toggle('on', !off && x === b));
-      if(desc) desc.textContent = off ? (el.dataset.hint || '') : (b.title || '');
+      if(desc) desc.textContent = (off ? '' : b.dataset.d) || el.dataset.hint || '';
       now();
     }));
   });
@@ -1478,5 +1504,5 @@ window.DiaryTracks = {
   toTags, tagName, tagQty, tagLabel, TAG_SEP,
   mealKinds, mealKindsIn, foodIndex, foodSuggest,
   eventsOf, evField, evOrder, photoIdsIn, stoolLog, stoolCount,
-  SETTING_KEY, MEDS_KEY, BRISTOL, MEALS, SKIN_AREAS,
+  SETTING_KEY, MEDS_KEY, BRISTOL, STOOL_AMT, STOOL_DUR, MEALS, SKIN_AREAS,
 };
