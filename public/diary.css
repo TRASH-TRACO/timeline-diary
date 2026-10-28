@@ -429,7 +429,10 @@ code{font-family:var(--font-mono);font-size:.92em;background:var(--bg3);padding:
 /* 자리를 찍는 일에는 큰 그림이 필요하다. 손가락이 과녁을 가리는 데다, 얼굴이
    클수록 같은 1px이 가리키는 얼굴 면적이 작아진다 */
 .pn-acne{display:grid;grid-template-columns:minmax(0,340px) minmax(0,1fr);gap:18px;align-items:start;}
-@media (max-width:620px){ .pn-acne{grid-template-columns:1fr;} }
+/* 1fr이 아니라 minmax(0,1fr)이다. 그냥 1fr은 칸의 최소 크기가 '안에 든 것의
+   min-content'라, 줄일 수 있는 글(줄임표로 자를 수 있는 한 줄)까지 칸을 밀어
+   벌린다. 그러면 칸이 화면보다 넓어지고 페이지가 통째로 옆으로 밀린다. */
+@media (max-width:620px){ .pn-acne{grid-template-columns:minmax(0,1fr);} }
 .ac-map{position:relative;}
 .ac-svg{display:block;width:100%;max-width:340px;margin:0 auto;cursor:crosshair;
   touch-action:manipulation;}
