@@ -88,6 +88,51 @@ const acDays = (ds, s) => {
 };
 const acLived = s => (s.gone ? acDays(s.gone, s) : null);
 
+// ── 되돌리기 ────────────────────────────────
+//
+// 손가락 하나가 스쳐서 생긴 점은 "지우기"로 치우면 되지만, 옮겨진 점은 원래
+// 어디 있었는지를 아무도 모른다. 그래서 되돌릴 수 있어야 한다.
+//
+// 고친 내용을 거꾸로 계산하지 않고 **건드리기 직전의 그 날 기록을 통째로**
+// 담아 둔다. 되돌리기란 그걸 도로 쓰는 일이다 — 동작마다 역연산을 따로 짜면
+// 동작이 하나 늘 때마다 되돌리기도 같이 틀린다.
+const AC_UNDO_MAX = 20;
+let _acUndo = [];                        // [{ label, days:[{ds, v}], photos:[id] }]
+let _acBatch = null;                     // 지금 묶는 중인 한 동작
+
+function acDrop(step){
+  // 사진 알맹이는 되돌리기 칸에서 밀려날 때 비로소 지운다. 지우자마자 없애면
+  // 되돌려도 빈 자리만 돌아온다.
+  if(step) (step.photos || []).forEach(p => {
+    if(window.DiaryPhotos) DiaryPhotos.remove(p).catch(() => {});
+  });
+}
+function acPushUndo(step){
+  _acUndo.push(step);
+  while(_acUndo.length > AC_UNDO_MAX) acDrop(_acUndo.shift());
+}
+/** 한 동작 = 되돌리기 한 칸. 그 사이의 모든 저장을 하나로 묶는다. */
+async function acStep(label, fn){
+  if(_acBatch) return fn();              // 이미 묶는 중이면 그대로 (겹치지 않게)
+  _acBatch = { label, days: [], photos: [] };
+  try{ return await fn(); }
+  finally{
+    const b = _acBatch;
+    _acBatch = null;
+    if(b.days.length) acPushUndo(b); else acDrop(b);
+  }
+}
+const acCanUndo = () => _acUndo.length > 0;
+const acUndoLabel = () => (_acUndo.length ? _acUndo[_acUndo.length - 1].label : '');
+/** 한 칸 되돌린다. 되돌린 것은 다시 되돌릴 수 없다 — 한 방향이면 충분하다. */
+async function acUndo(){
+  const step = _acUndo.pop();
+  if(!step) return null;
+  for(const e of step.days) await DiaryStore.setTrack(e.ds, AC_TRACK, e.v);
+  _acCache = null;                       // 사진은 그대로 두니 되살아난다
+  return step.label;
+}
+
 // ── 쓰기 ────────────────────────────────────
 // 어느 날 기록을 고치든 통로는 하나다. add도 gone도 빈 날은 기록을 지운다 —
 // 빈 껍데기가 남으면 달력에 아무것도 아닌 표가 서고 '이 날은 빼기'도 막힌다.
@@ -101,6 +146,12 @@ async function acSave(ds, v){
   if(add.length) next.add = add;
   if(gone.length) next.gone = gone;
   if(shot.length) next.shot = shot;
+  // 건드리기 직전의 모습을 담아 둔다. 한 동작이 같은 날을 여러 번 고쳐도
+  // 맨 처음 모습만 있으면 된다.
+  if(_acBatch && !_acBatch.days.some(e => e.ds === ds)){
+    const cur = DiaryStore.getTrack(ds, AC_TRACK);
+    _acBatch.days.push({ ds, v: cur ? JSON.parse(JSON.stringify(cur)) : null });
+  }
   await DiaryStore.setTrack(ds, AC_TRACK, Object.keys(next).length ? next : null);
   _acCache = null;
 }
@@ -108,6 +159,7 @@ const acDayOf = ds => DiaryStore.getTrack(ds, AC_TRACK) || {};
 
 /** 이 날 하나 났다 */
 async function acAdd(ds, spot){
+ return acStep('여드름 추가', async () => {
   const d = acDayOf(ds);
   const s = {
     id: acNewId(), no: acNextNo(), type: AC_TYPES[0].v,
@@ -116,6 +168,7 @@ async function acAdd(ds, spot){
   };
   await acSave(ds, { ...d, add: (d.add || []).concat([s]) });
   return s;
+ });
 }
 /**
  * 여드름 자체를 고친다.
@@ -124,17 +177,24 @@ async function acAdd(ds, spot){
  * 9일에 서서 고쳐도 글은 그 녀석이 태어난 1일 기록에 들어간다.
  */
 async function acEdit(id, patch){
-  const s = acRoster().find(x => x.id === id);
-  if(!s) return null;
-  const d = acDayOf(s.born);
-  const add = (d.add || []).map(x => (x.id === id ? { ...x, ...patch } : x));
-  await acSave(s.born, { ...d, add });
-  return acRoster().find(x => x.id === id) || null;
+  const cur = acRoster().find(x => x.id === id);
+  if(!cur) return null;
+  const what = ('x' in patch || 'y' in patch) ? '자리 옮기기'
+             : 'type' in patch ? '종류 바꾸기'
+             : 'itch' in patch ? '간지러움'
+             : 'note' in patch ? '특이사항' : '고치기';
+  return acStep(`${cur.no}번 ${what}`, async () => {
+    const d = acDayOf(cur.born);
+    const add = (d.add || []).map(x => (x.id === id ? { ...x, ...patch } : x));
+    await acSave(cur.born, { ...d, add });
+    return acRoster().find(x => x.id === id) || null;
+  });
 }
 /** 이 날 없어졌다 / 아니었다 */
 async function acSetGone(ds, id, on){
   const s = acRoster().find(x => x.id === id);
   if(!s) return;
+ return acStep(`${s.no}번 ${on ? '없어짐' : '되살리기'}`, async () => {
   if(s.gone && s.gone !== ds){            // 다른 날에 적힌 소멸은 먼저 거둔다
     const old = acDayOf(s.gone);
     await acSave(s.gone, { ...old, gone: (old.gone || []).filter(x => x !== id) });
@@ -142,9 +202,11 @@ async function acSetGone(ds, id, on){
   const d = acDayOf(ds);
   const gone = (d.gone || []).filter(x => x !== id);
   await acSave(ds, { ...d, gone: on ? gone.concat([id]) : gone });
+ });
 }
 /** 이 날 찍은 사진을 그 여드름에 붙인다 */
 async function acAddShot(ds, id, photoId){
+ return acStep('사진 넣기', async () => {
   const d = acDayOf(ds);
   const shot = (d.shot || []).map(g => ({ ...g, photos: (g.photos || []).slice() }));
   const mine = shot.find(g => g.id === id);
@@ -156,6 +218,7 @@ async function acAddShot(ds, id, photoId){
   }
   await acSave(ds, { ...d, shot });
   return true;
+ });
 }
 /**
  * 사진을 뗀다. 어느 날 찍힌 것인지는 명단이 안다 — 보고 있는 날이 아니라
@@ -164,22 +227,27 @@ async function acAddShot(ds, id, photoId){
 async function acRemoveShot(photoId){
   const s = acRoster().find(x => (x.shots || []).some(g => g.photos.includes(photoId)));
   if(!s) return;
-  const g = s.shots.find(g => g.photos.includes(photoId));
-  const d = acDayOf(g.ds);
-  const shot = (d.shot || []).map(x => ({ ...x, photos: (x.photos || []).filter(p => p !== photoId) }));
-  await acSave(g.ds, { ...d, shot });
-  if(window.DiaryPhotos) DiaryPhotos.remove(photoId).catch(() => {});
+  return acStep(`${s.no}번 사진 빼기`, async () => {
+    const g = s.shots.find(g => g.photos.includes(photoId));
+    const d = acDayOf(g.ds);
+    const shot = (d.shot || []).map(x => ({ ...x, photos: (x.photos || []).filter(p => p !== photoId) }));
+    await acSave(g.ds, { ...d, shot });
+    // 알맹이는 지금 지우지 않는다 — 되돌리기 칸에서 밀려날 때 함께 사라진다
+    if(_acBatch) _acBatch.photos.push(photoId);
+  });
 }
 
 /** 아예 지운다 — 잘못 찍었을 때. 태어난 날과 없어진 날 양쪽에서 거둔다. */
 async function acRemove(id){
   const s = acRoster().find(x => x.id === id);
   if(!s) return;
+ return acStep(`${s.no}번 지우기`, async () => {
   // 사진부터 거둔다. 남겨 두면 아무 데서도 안 걸린 채 저장소만 먹는다.
+  // 알맹이는 되돌리기 칸이 떠안았다가 밀려날 때 지운다.
   for(const g of (s.shots || [])){
     const d = acDayOf(g.ds);
     await acSave(g.ds, { ...d, shot: (d.shot || []).filter(x => x.id !== id) });
-    if(window.DiaryPhotos) g.photos.forEach(p => DiaryPhotos.remove(p).catch(() => {}));
+    if(_acBatch) g.photos.forEach(p => _acBatch.photos.push(p));
   }
   if(s.gone){
     const g = acDayOf(s.gone);
@@ -187,6 +255,7 @@ async function acRemove(id){
   }
   const b = acDayOf(s.born);
   await acSave(s.born, { ...b, add: (b.add || []).filter(x => x.id !== id) });
+ });
 }
 
 // ── 얼굴 ────────────────────────────────────
@@ -271,6 +340,17 @@ function acMoveDot(g, p){
 
 // ── 화면 ────────────────────────────────────
 let _acSel = null;                       // 펼쳐 둔 여드름
+/**
+ * 편집 모드.
+ *
+ * 얼굴을 누르면 바로 찍히는 게 적기에는 빠르지만, 손가락이 스치기만 해도
+ * 찍힌다. 특히 얼굴을 자세히 보려고 핀치로 확대할 때 — 두 손가락 중 하나가
+ * 먼저 닿으면 그게 그대로 한 번 누른 것이 된다.
+ *
+ * 그래서 기본은 보는 모드다. 적을 때만 켠다. 새로 고치면 다시 꺼진다 —
+ * 켜 둔 채로 두는 편함보다, 모르는 사이에 기록이 바뀌지 않는 쪽이 낫다.
+ */
+let _acEdit = false;
 
 function acRender(box, ds){
   if(!box) return;
@@ -280,8 +360,16 @@ function acRender(box, ds){
   if(_acSel && !shown.some(s => s.id === _acSel)) _acSel = null;
 
   box.innerHTML =
-    `<div class="ac-map">${acFaceSvg(shown, _acSel)}` +
-      `<div class="ac-hint">얼굴을 누르면 하나 생깁니다 · 점을 끌어 자리를 맞출 수 있어요</div>` +
+    `<div class="ac-map${_acEdit ? ' edit' : ''}">${acFaceSvg(shown, _acSel)}` +
+      `<div class="ac-bar">` +
+        `<button type="button" class="ac-mode${_acEdit ? ' on' : ''}" aria-pressed="${_acEdit}">` +
+          `${_acEdit ? '✏️ 편집 중' : '✏️ 편집'}</button>` +
+        `<button type="button" class="ac-undo"${acCanUndo() ? '' : ' disabled'} ` +
+          `title="${escapeHtml(acUndoLabel())}">↩ 되돌리기</button>` +
+      `</div>` +
+      `<div class="ac-hint">${_acEdit
+        ? '얼굴을 누르면 하나 생깁니다 · 점을 끌어 자리를 맞출 수 있어요'
+        : '편집을 켜면 찍고 옮길 수 있어요'}</div>` +
     `</div>` +
     `<div class="ac-side">` +
       `<div class="ac-sum">${acDaySum(ds, live, gone)}</div>` +
@@ -384,13 +472,32 @@ function acWire(box, ds){
   // 경우에 깃발이 올라간 채 남아 다음 누르기를 먹는다.
   let dragEndAt = 0;
 
+  // 손가락이 둘 이상이면 그건 확대하려는 것이지 찍으려는 게 아니다.
+  // 먼저 닿은 손가락이 이미 끌고 있었더라도 거기서 멈춘다.
+  const touches = new Set();
+  let multi = false;
+
   svg.addEventListener('pointerdown', e => {
+    if(!touches.size) multi = false;     // 새 손짓의 시작 — 여기서만 푼다
+    touches.add(e.pointerId);
+    if(touches.size > 1){
+      multi = true;
+      if(drag){ drag.g.classList.remove('moving'); redraw(); drag = null; }
+      return;
+    }
+    if(!_acEdit) return;                 // 보는 모드에서는 끌 수 없다
     const g = e.target.closest('.ac-dot');
     if(!g) return;
     e.preventDefault();
     drag = { id: g.dataset.id, g, fromPx: { x: e.clientX, y: e.clientY }, at: null, moved: false };
     try{ svg.setPointerCapture(e.pointerId); }catch(_){}
   });
+  // multi는 여기서 풀지 않는다. 손가락을 다 떼고 나서도 뒤따라 오는 click까지
+  // 막아야 하는데, 타이머로 풀면 그 click과 어느 쪽이 먼저일지 알 수 없다.
+  const forget = e => { touches.delete(e.pointerId); };
+  svg.addEventListener('pointerup', forget);
+  svg.addEventListener('pointercancel', forget);
+  svg.addEventListener('pointerleave', forget);
   svg.addEventListener('pointermove', e => {
     if(!drag) return;
     if(!drag.moved &&
@@ -402,6 +509,7 @@ function acWire(box, ds){
     acMoveDot(drag.g, p);
   });
   const endDrag = async e => {
+    if(multi){ drag = null; return; }
     if(!drag) return;
     const d = drag;
     drag = null;
@@ -428,13 +536,31 @@ function acWire(box, ds){
   // 누르고 다시 자리를 누르는 두 걸음보다, 바로 누르는 한 걸음이 낫다.
   // 점 위에서 일어난 일은 위의 pointer 쪽이 이미 끝냈다.
   svg.addEventListener('click', async e => {
+    if(multi) return;                             // 확대하던 손가락이 흘린 것
     if(Date.now() - dragEndAt < 250) return;      // 방금 끌고 난 뒤의 click
-    if(e.target.closest('.ac-dot')) return;
+    const g = e.target.closest('.ac-dot');
+    // 보는 모드에서도 점을 눌러 펴고 접는 건 된다 — 그건 기록을 바꾸지 않는다
+    if(g){
+      if(!_acEdit){ _acSel = _acSel === g.dataset.id ? null : g.dataset.id; redraw(); }
+      return;
+    }
+    if(!_acEdit) return;                          // 빈 자리를 눌러도 아무 일 없다
     const s = await acAdd(ds, round(pos(e)));
     _acSel = s.id;
     redraw();
     acAfterWrite(ds);
   });
+  const mode = box.querySelector('.ac-mode');
+  if(mode) mode.addEventListener('click', () => { _acEdit = !_acEdit; redraw(); });
+  const undo = box.querySelector('.ac-undo');
+  if(undo) undo.addEventListener('click', async () => {
+    const what = await acUndo();
+    if(!what) return;
+    redraw();
+    acAfterWrite(ds);
+    showToast(`↩ '${what}'을(를) 되돌렸어요`);
+  });
+
   box.querySelectorAll('.ac-dot').forEach(g => {
     g.addEventListener('keydown', e => {
       if(e.key === 'Enter' || e.key === ' '){
@@ -556,8 +682,15 @@ function acWireShots(row, id, ds, redraw){
   });
 }
 
-/** 쓰고 난 뒤 바깥 화면 맞추기 — 달력 배지와 달 요약 */
+/**
+ * 쓰고 난 뒤 화면 맞추기 — 달력 배지와 달 요약, 그리고 되돌리기 단추.
+ *
+ * 되돌리기 단추는 통째로 다시 그리지 않는 길(자리 옮기기, 특이사항 타이핑)로
+ * 들어와도 맞아야 한다. 무엇을 되돌릴지 틀리게 적힌 단추는 없느니만 못하다.
+ */
 function acAfterWrite(ds){
+  const u = document.querySelector('.ac-undo');
+  if(u){ u.disabled = !acCanUndo(); u.title = acUndoLabel(); }
   if(typeof window.onAcneWrite === 'function') window.onAcneWrite(ds);
 }
 
@@ -566,5 +699,6 @@ window.DiaryAcne = {
   roster: acRoster, liveOn: acLiveOn, goneOn: acGoneOn, days: acDays, lived: acLived,
   add: acAdd, edit: acEdit, setGone: acSetGone, remove: acRemove,
   addShot: acAddShot, removeShot: acRemoveShot, SHOT_MAX: AC_SHOT_MAX,
+  undo: acUndo, canUndo: acCanUndo, undoLabel: acUndoLabel,
   render: acRender, faceSvg: acFaceSvg,
 };
