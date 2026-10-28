@@ -469,7 +469,10 @@ const TRACKS = [
     // 끼니마다 음식 태그. 집밥은 크게 돌고 돌아서, 몇 번 적고 나면 그 다음부터는
     // 치는 게 아니라 고르는 일이 된다.
     fields: MEALS.map(m => ({
-      key: m.key, type: 'tags', label: m.label, max: 12,
+      // 상한을 두지 않는다. 한 끼에 열두 가지가 넘는 날은 실제로 있고(뷔페,
+      // 명절, 반찬이 많은 집밥), 그때 더 못 적게 막으면 가짓수 세기가 그 날부터
+      // 틀린다. 세려고 만든 칸이 세는 걸 막으면 안 된다.
+      key: m.key, type: 'tags', label: m.label,
       placeholder: '음식 적고 Enter (양은 밥_1공기)',
     })).concat([
       { key: 'photos', type: 'photo', label: '식사 사진', max: 4 },
@@ -867,7 +870,8 @@ function fieldsHtml(track, val){
           (tagQty(t) ? `<i>${escapeHtml(tagQty(t))}</i>` : '') +
           `<button type="button" class="tf-tag-x" aria-label="${escapeHtml(tagName(t))} 빼기">✕</button>` +
         `</span>`).join('');
-      return `<div class="tf" data-key="${f.key}" data-type="tags" data-max="${f.max}">` +
+      return `<div class="tf" data-key="${f.key}" data-type="tags" ` +
+          `data-max="${f.max == null ? '' : f.max}">` +
         `<label class="tf-label" for="${id}">${escapeHtml(f.label)}</label>` +
         // 제안 목록은 입력칸 바로 아래에 떠야 한다. 흐름 안에 끼워 넣으면 뜰 때마다
         // 아래 칸들이 밀려서, 고르려고 보는 사이에 화면이 움직인다.
@@ -1136,7 +1140,9 @@ function wireFields(box, track, onChange){
     const wrap  = el.querySelector('.tf-tags');
     const input = el.querySelector('.tf-tag-in');
     const sug   = el.querySelector('.tf-sug');
-    const max   = +el.dataset.max || 20;
+    // 선언에 상한이 없으면 끝이 없다. 20 같은 숨은 숫자를 몰래 두면, 그 숫자에
+    // 걸린 사람은 왜 안 되는지 알 길이 없다.
+    const max   = +el.dataset.max || Infinity;
     const ph    = input.placeholder;
     const tagsOf = () => [...el.querySelectorAll('.tf-tag')].map(t => t.dataset.v);
     let hi = -1;                                   // 자동완성에서 짚고 있는 줄
