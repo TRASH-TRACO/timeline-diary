@@ -573,6 +573,19 @@ code{font-family:var(--font-mono);font-size:.92em;background:var(--bg3);padding:
 .mg-med .btn{flex:none;}
 .mg-med-msg:not(:empty){font-size:11px;color:var(--red);}
 
+/* 내 컵 — 가진 것은 칩으로 보이고, 새 것은 그 옆에서 적는다 */
+.mg-cups{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+.mg-cup{display:inline-flex;align-items:center;gap:3px;padding:5px 5px 5px 11px;font-size:12px;
+  font-family:var(--font-mono);border-radius:100px;background:var(--accent-bg);color:var(--accent);
+  font-weight:600;}
+.mg-cup-x{width:17px;height:17px;padding:0;border:none;border-radius:50%;line-height:1;
+  font-size:9px;cursor:pointer;background:transparent;color:inherit;opacity:.6;}
+.mg-cup-x:hover{opacity:1;background:rgba(127,127,127,.22);}
+.mg-cup-new{display:inline-flex;align-items:center;gap:6px;}
+.mg-cup-in{width:96px;padding:7px 10px;font-size:13px;font-family:var(--font-mono);
+  border:1px solid var(--border);border-radius:var(--r2);background:var(--bg2);color:var(--text);}
+.mg-cup-in:focus{outline:none;border-color:var(--accent);background:var(--bg);}
+
 /* ── 일기 ── */
 .pn-note{margin-top:18px;padding-top:16px;border-top:1px solid var(--border);}
 .pn-note-lbl{display:block;font-size:11px;font-weight:600;color:var(--text3);margin-bottom:6px;}
@@ -754,6 +767,7 @@ code{font-family:var(--font-mono);font-size:.92em;background:var(--bg3);padding:
  */
 @media (pointer: coarse){
   .tf-input,.tf-text,.tf-tag-in,.tf-cnt-v,.tf-ev-at,.ac-note,.pn-note-input,.mg-med input,
+  .mg-cup-in,
   .sh-range input{font-size:16px;}
   .tf-add,.tf-ev-add{padding:9px 16px;}
   .sh-lv{padding:7px 13px;font-size:12.5px;}

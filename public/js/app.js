@@ -929,6 +929,35 @@ function medFormHtml(){
 }
 
 /**
+ * 내 컵.
+ *
+ * 사람마다 쥐고 마시는 그릇이 다르다. 200·350·500을 박아 두면 텀블러 하나로
+ * 하루를 나는 사람은 매번 숫자를 쳐 넣어야 하고, 그러면 그 칸은 안 쓰게 된다.
+ */
+function cupFormHtml(){
+  const list = DiaryTracks.cups();
+  const chips = list.map(ml =>
+    `<span class="mg-cup">${fmtNum(ml)}ml` +
+      `<button class="mg-cup-x" onclick="onRemoveCup(${ml})" ` +
+        `aria-label="${fmtNum(ml)}ml 컵 지우기">✕</button>` +
+    `</span>`).join('');
+  return `<div class="mg-sec-t">내 컵</div>` +
+    `<div class="mg-cups">${chips}` +
+      `<span class="mg-cup-new">` +
+        `<input id="cup-ml" class="mg-cup-in" type="number" inputmode="numeric" min="1" max="3000" ` +
+          `step="10" placeholder="예: 420" aria-label="컵 크기(ml)">` +
+        `<button class="btn pri" onclick="onAddCup()">추가</button>` +
+      `</span>` +
+    `</div>` +
+    `<div class="mg-med-msg" id="cup-msg"></div>` +
+    `<p class="mg-note" id="cup-note">` + (list.length
+      ? `수분 섭취 화면에서 <b>${list.map(ml => '+' + fmtNum(ml)).join(' · ')}</b> 버튼으로 나옵니다. ` +
+        `쓰는 컵 그대로 적어두면 한 번 누르는 걸로 끝나요.`
+      : `컵을 하나라도 두면 버튼으로 나옵니다. 지금은 숫자를 직접 적어야 해요.`) +
+    `</p>`;
+}
+
+/**
  * 기록에 들어 있는 사진 id 전부. 어떤 칸이 사진인지는 트랙 선언이 안다 —
  * 배열이라고 다 사진이 아니고(식사 태그도 배열이다), 사진이 사건 하나하나에
  * 붙어 있을 수도 있다(변마다 찍은 사진).
@@ -989,6 +1018,23 @@ async function onAddMed(){
     const msg = $('med-msg');
     if(msg) msg.textContent = e.message || '약을 추가하지 못했어요';
   }
+}
+
+async function onAddCup(){
+  const msg = $('cup-msg');
+  try{
+    const ml = await DiaryTracks.addCup($('cup-ml').value);
+    renderPanel();
+    await openManage();
+    showToast(`🥤 ${fmtNum(ml)}ml 컵을 더했어요`);
+  }catch(e){
+    if(msg) msg.textContent = e.message || '컵을 더하지 못했어요';
+  }
+}
+async function onRemoveCup(ml){
+  await DiaryTracks.removeCup(ml);
+  renderPanel();
+  await openManage();
 }
 
 async function onRenameMed(id){
@@ -1055,6 +1101,7 @@ async function openManage(){
       `하루하루는 그 날 화면에서 더하거나 뺄 수 있어요.<br>` +
       `끄더라도 이미 남긴 기록은 지워지지 않고, 그 날짜에는 계속 보입니다.</p>` +
     medFormHtml() +
+    cupFormHtml() +
     `<div class="mg-stats">` +
       `<div><span>일기</span><b>${fmtNum(s.notes)}편</b></div>` +
       `<div><span>경로</span><b>${fmtNum(s.routes)}일</b></div>` +
@@ -1104,6 +1151,8 @@ window.closeManage = closeManage;
 window.wipeRoutes = wipeRoutes;
 window.toggleTrack = toggleTrack;
 window.onAddMed = onAddMed;
+window.onAddCup = onAddCup;
+window.onRemoveCup = onRemoveCup;
 window.onRenameMed = onRenameMed;
 window.onRemoveMed = onRemoveMed;
 

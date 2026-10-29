@@ -155,6 +155,40 @@ const SKIN_AREAS = [
 const WATER_GOAL = 2000;
 const fmtMl = ml => (ml >= 1000 ? (ml / 1000).toFixed(ml % 1000 ? 1 : 0) + 'L' : ml + 'ml');
 
+// ── 내 컵 ───────────────────────────────────
+// 사람마다 쥐고 마시는 그릇이 다르다. 200·350·500을 코드에 박아 두면 텀블러
+// 하나로 하루를 나는 사람은 매번 숫자를 쳐 넣어야 하고, 그러면 그 칸은 안 쓰게
+// 된다. 그래서 컵은 설정에 담고 트랙은 그걸 보고 단추를 그린다.
+//
+// 처음 쓰는 사람에게는 흔한 세 가지를 쥐어 준다. 고친 적이 있으면(배열이 있으면)
+// 그 사람이 정한 것만 따른다 — 하나도 없는 것도 그 사람의 선택이다.
+const CUPS_KEY = 'cups';
+const CUPS_FIRST = [200, 350, 500];
+const CUP_MAX = 3000;
+function cups(){
+  const v = DiaryStore.getSetting(CUPS_KEY, null);
+  return Array.isArray(v) ? v.slice() : CUPS_FIRST.slice();
+}
+// 받은 값을 먼저 보고, 그 다음에 다듬는다. 거꾸로 하면 빈 칸이 1ml 컵이 된다 —
+// 다듬기(Math.max(1, …))가 '안 적었다'를 '1'로 바꿔 놓기 때문이다.
+const cupOf = n => {
+  const v = +String(n == null ? '' : n).trim();
+  return (String(n).trim() !== '' && isFinite(v) && v > 0) ? Math.round(Math.min(CUP_MAX, v)) : 0;
+};
+/** 컵을 더한다. 같은 크기는 하나만, 작은 것부터. */
+async function addCup(ml){
+  const n = cupOf(ml);
+  if(!n) throw new Error('컵 크기를 적어주세요');
+  const cur = cups();
+  if(cur.includes(n)) throw new Error('같은 크기의 컵이 이미 있어요');
+  if(cur.length >= 6) throw new Error('컵은 여섯 개까지만 둘 수 있어요');
+  await DiaryStore.setSetting(CUPS_KEY, cur.concat([n]).sort((a, b) => a - b));
+  return n;
+}
+async function removeCup(ml){
+  await DiaryStore.setSetting(CUPS_KEY, cups().filter(x => x !== cupOf(ml)));
+}
+
 // ── 사건 목록 (events) ──────────────────────
 // 하루에 한 번뿐인 것(복용량)과 하루에 몇 번이고 있는 것(변)은 같은 칸으로 받을 수
 // 없다. 횟수만 숫자로 받으면 "세 번 중 어느 것이 4형이었나"가 기록에서 사라진다.
@@ -523,8 +557,10 @@ const TRACKS = [
     // 값을 덮어쓰는 숫자 칸이 아니라 더해지는 칸(counter)을 쓴다 — 지금까지
     // 얼마 마셨는지를 머리로 더하고 있으면 그 칸은 안 쓰게 된다.
     fields: [
+      // add를 미리 적지 않고 그릴 때 읽는다. 설정에서 컵을 고치면 다음에 그릴 때
+      // 바로 따라붙는다 — 트랙 선언을 다시 만들 필요가 없다.
       { key: 'ml', type: 'counter', label: '마신 양', unit: 'ml',
-        add: [200, 350, 500], max: 9000, step: 50, goal: WATER_GOAL },
+        get add(){ return cups(); }, max: 9000, step: 50, goal: WATER_GOAL },
     ],
     cell: v => (v && v.ml ? { badge: fmtMl(v.ml) } : null),
     share: [
@@ -1520,5 +1556,6 @@ window.DiaryTracks = {
   toTags, tagName, tagQty, tagLabel, TAG_SEP,
   mealKinds, mealKindsIn, foodIndex, foodSuggest,
   eventsOf, evField, evOrder, photoIdsIn, stoolLog, stoolCount,
+  cups, addCup, removeCup, CUPS_KEY, fmtMl,
   SETTING_KEY, MEDS_KEY, BRISTOL, STOOL_AMT, STOOL_DUR, MEALS, SKIN_AREAS,
 };
