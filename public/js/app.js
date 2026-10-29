@@ -901,7 +901,7 @@ window.exportShareMd = exportShareMd;
 // ── 데이터 관리 ─────────────────────────────
 /**
  * 약 추가 폼. 이소티논만 미리 적어두고 끝내면 다른 약을 먹는 사람은 쓸 데가 없다.
- * 이름·단위·자주 먹는 양만 받으면 나머지(폼·배지·월 요약·공개 수준)는
+ * 이름·단위·한 번에 먹는 양만 받으면 나머지(폼·배지·월 요약·공개 수준)는
  * 미리 적어둔 트랙과 똑같이 만들어진다.
  */
 function medFormHtml(){
@@ -918,14 +918,14 @@ function medFormHtml(){
           ['mg', 'g', '정', '캡슐', 'ml', 'IU'].map(u => `<option value="${u}">`).join('') +
         `</datalist>` +
         // 칸이 좁아서(특히 휴대폰) 긴 안내는 잘린다. 형식만 보이고 뜻은 아래 줄이 맡는다.
-        `<input id="med-quick" class="mg-med-q" maxlength="40" placeholder="예: 0, 1, 2" ` +
-          `aria-label="자주 먹는 양">` +
+        `<input id="med-quick" class="mg-med-q" maxlength="40" placeholder="예: 1, 2" ` +
+          `aria-label="한 번에 먹는 양">` +
         `<button class="btn pri" onclick="onAddMed()">추가</button>` +
       `</div>` +
       `<div class="mg-med-msg" id="med-msg"></div>` +
     `</div>` +
-    `<p class="mg-note"><b>자주 먹는 양</b>을 쉼표로 적어두면 그 숫자가 버튼으로 나와서 ` +
-      `한 번에 고를 수 있어요.</p>`;
+    `<p class="mg-note"><b>한 번에 먹는 양</b>을 쉼표로 적어두면 그 숫자가 버튼으로 나옵니다. ` +
+      `누를 때마다 그만큼 <b>더해집니다</b> — 아침에 한 번, 저녁에 한 번 먹었으면 두 번 누르면 돼요.</p>`;
 }
 
 /**

@@ -636,6 +636,8 @@ function meds(){
 /** 약 하나를 트랙 선언으로. 미리 적어둔 트랙과 같은 모양이라 화면 쪽은 구분하지 않는다. */
 function medTrack(m){
   const unit = m.unit || '';
+  // 0은 더할 것이 없다 — 더해 가는 칸에서 '+0' 단추는 누를 이유가 없는 단추다
+  const quick = (m.quick || []).filter(n => n > 0);
   const amount = n => fmtNum(Math.round(n * 100) / 100) + (unit ? ' ' + unit : '');
   return {
     id: MED_PREFIX + m.id,
@@ -644,11 +646,14 @@ function medTrack(m){
     med: m,                     // 이름을 바꾸거나 지울 때 쓸 원본
     // 설명 자리에 "먹은 양과 그날의 기록을 남깁니다"를 약마다 똑같이 반복하면
     // 두 번째 약부터는 읽을 이유가 없는 글이 된다. 이 약만의 정보를 적는다.
-    desc: [m.unit && `단위 ${m.unit}`, (m.quick || []).length && `자주 ${m.quick.join(', ')}`]
+    desc: [m.unit && `단위 ${m.unit}`, quick.length && `한 번에 ${quick.join(', ')}`]
       .filter(Boolean).join(' · '),
     fields: [
-      { key: 'dose', type: 'number', label: '복용량', unit,
-        min: 0, max: 9999, step: 'any', quick: m.quick || [] },
+      // 약은 하루에 한 번 적고 마는 게 아니라 먹을 때마다 더하는 기록이다.
+      // 덮어쓰는 숫자 칸이면 '500mg' 단추가 "오늘 통틀어 500mg"이 되어 버려서,
+      // 아침에 한 번 저녁에 한 번 먹은 날 둘 중 하나가 사라진다.
+      { key: 'dose', type: 'counter', label: '복용량', unit,
+        max: 9999, step: 'any', add: quick },
       { key: 'note', type: 'text', label: '메모', max: 200,
         placeholder: '그날 느낀 점을 짧게' },
     ],
@@ -830,7 +835,8 @@ function fieldsHtml(track, val){
           `data-max="${f.max}" data-goal="${f.goal || 0}">` +
         `<label class="tf-label" for="${id}">${escapeHtml(f.label)}</label>` +
         `<div class="tf-cnt">` +
-          `<input id="${id}" class="tf-cnt-v" type="number" inputmode="numeric" min="0" ` +
+          `<input id="${id}" class="tf-cnt-v" type="number" ` +
+            `inputmode="${f.step === 'any' ? 'decimal' : 'numeric'}" min="0" ` +
             `max="${f.max}" step="${f.step || 1}" placeholder="0" ` +
             `value="${cur == null ? '' : cur}">` +
           `<span class="tf-unit">${unit}</span>` +
@@ -1051,7 +1057,10 @@ function wireFields(box, track, onChange){
         if(raw !== '' && isFinite(+raw)) out[key] = +raw;
       }else if(el.dataset.type === 'counter'){
         const raw = el.querySelector('.tf-cnt-v').value.trim();
-        const n = Math.max(0, Math.round(+raw));
+        // 반 알·0.5정처럼 소수인 양이 있다. 정수로 깎으면 0.5가 사라진다.
+        // 소수점 둘째 자리에서 끊는 건 0.1+0.2가 0.30000000000000004이 되는
+        // 부동소수 찌꺼기를 치우려는 것이다.
+        const n = Math.max(0, Math.round(+raw * 100) / 100);
         // 0은 "안 마셨다"가 아니라 "아직 안 적었다"로 본다 — 빈 칸과 같게 둔다
         if(raw !== '' && isFinite(+raw) && n > 0) out[key] = n;
       }else if(el.dataset.type === 'photo'){
@@ -1118,7 +1127,8 @@ function wireFields(box, track, onChange){
     const input = el.querySelector('.tf-cnt-v');
     const max = +el.dataset.max || 1e6;
     el.querySelectorAll('.tf-add').forEach(b => b.addEventListener('click', () => {
-      const next = Math.max(0, Math.min(max, (+input.value || 0) + (+b.dataset.add)));
+      const next = Math.max(0, Math.min(max,
+        Math.round(((+input.value || 0) + (+b.dataset.add)) * 100) / 100));
       input.value = next || '';          // 0이면 비워서 '아직 안 적음'으로 되돌린다
       sync();
       now();
