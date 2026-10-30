@@ -560,11 +560,20 @@ const TRACKS = [
       // add를 미리 적지 않고 그릴 때 읽는다. 설정에서 컵을 고치면 다음에 그릴 때
       // 바로 따라붙는다 — 트랙 선언을 다시 만들 필요가 없다.
       { key: 'ml', type: 'counter', label: '마신 양', unit: 'ml',
-        get add(){ return cups(); }, max: 9000, step: 50, goal: WATER_GOAL },
+        get add(){ return cups(); }, max: 9000, step: 50, goal: WATER_GOAL,
+        // 누른 때를 'log'에 적는다. 여러 번 누르다 보면 "아까 그거 눌렀나?"가
+        // 되는데, 그건 머리로 헤아릴 일이 아니라 적어 두면 끝나는 일이다.
+        log: 'log' },
+      // 폼에는 안 나온다(위 칸이 직접 그린다). 공개본·Markdown·사전이 저장된
+      // 모양을 사람 말로 옮길 수 있게 적어 둔 선언이다.
+      { key: 'log', type: 'events', hidden: true, label: '마신 때', unit: '번',
+        fields: [{ key: 'ml', type: 'number', label: '양', unit: 'ml' }] },
     ],
     cell: v => (v && v.ml ? { badge: fmtMl(v.ml) } : null),
     share: [
       { id: 'ml', name: '마신 양', fields: ['ml'], recommended: true },
+      { id: 'when', name: '마신 때까지', fields: ['ml', 'log.at', 'log.ml'],
+        desc: '하루 중 언제 마셨는지가 함께 나갑니다' },
     ],
     summary(entries){
       const days = entries.filter(e => e.v && e.v.ml > 0);
@@ -866,9 +875,14 @@ function fieldsHtml(track, val){
       // 쪽이 빠르다.
       const btns = add.map(n => `<button type="button" class="tf-add" data-add="${n}">+${n}</button>`)
         .concat(add.length ? [`<button type="button" class="tf-add minus" data-add="-${add[0]}" ` +
-          `title="잘못 눌렀을 때">−${add[0]}</button>`] : []).join('');
+          // 누른 때를 적어 두는 칸에서는 '마지막으로 누른 것'을 뺀다. 크기가
+          // 제각각이라 −250으로는 방금 누른 500을 되돌릴 수 없다.
+          `title="잘못 눌렀을 때">${f.log ? '↩ 되돌리기' : '−' + add[0]}</button>`] : []).join('');
       return `<div class="tf" data-key="${f.key}" data-type="counter" ` +
-          `data-max="${f.max}" data-goal="${f.goal || 0}">` +
+          `data-max="${f.max}" data-goal="${f.goal || 0}"` +
+          // 누른 때를 적어 둘 칸 이름과, 지금까지 적힌 것
+          (f.log ? ` data-log="${f.log}" data-logv="${escapeHtml(JSON.stringify(
+            (Array.isArray(v[f.log]) ? v[f.log] : []).filter(x => x && x.ml > 0)))}"` : '') + `>` +
         `<label class="tf-label" for="${id}">${escapeHtml(f.label)}</label>` +
         `<div class="tf-cnt">` +
           `<input id="${id}" class="tf-cnt-v" type="number" ` +
@@ -881,6 +895,9 @@ function fieldsHtml(track, val){
         `</div>` +
         `<div class="tf-adds">${btns}</div>` +
         (f.goal ? `<div class="tf-bar"><i></i></div>` : '') +
+        // 여러 번 누르다 보면 "아까 그거 눌렀나?"가 된다. 누른 때가 보이면
+        // 헤아릴 것이 없다.
+        (f.log ? `<div class="tf-cnt-log"></div>` : '') +
       `</div>`;
     }
     if(f.type === 'photo'){
@@ -1083,6 +1100,7 @@ function wireFields(box, track, onChange){
   const dsBox = box.closest('[data-ds]');
   const ds = dsBox ? dsBox.dataset.ds : '';
   const evReads = new Map();              // 사건 목록 칸 → () => [사건…]
+  const cntLogs = new Map();              // 더해 가는 칸 → () => [{at, ml}…]
 
   const read = () => {
     const out = {};
@@ -1092,6 +1110,9 @@ function wireFields(box, track, onChange){
         const raw = el.querySelector('.tf-input').value.trim();
         if(raw !== '' && isFinite(+raw)) out[key] = +raw;
       }else if(el.dataset.type === 'counter'){
+        const rd = cntLogs.get(el);
+        const log = rd ? rd() : null;
+        if(el.dataset.log && log && log.length) out[el.dataset.log] = log;
         const raw = el.querySelector('.tf-cnt-v').value.trim();
         // 반 알·0.5정처럼 소수인 양이 있다. 정수로 깎으면 0.5가 사라진다.
         // 소수점 둘째 자리에서 끊는 건 0.1+0.2가 0.30000000000000004이 되는
@@ -1162,13 +1183,57 @@ function wireFields(box, track, onChange){
   own('.tf[data-type="counter"]').forEach(el => {
     const input = el.querySelector('.tf-cnt-v');
     const max = +el.dataset.max || 1e6;
+    const unit = (el.querySelector('.tf-unit') || {}).textContent || '';
+    const logBox = el.querySelector('.tf-cnt-log');
+    // 누른 때. 숫자를 직접 고치는 길도 열려 있어서 합이 총량과 다를 수 있다 —
+    // 그때는 총량이 맞고, 이 목록은 '눌러서 더한 것'의 기록이다.
+    let log = null;
+    if(el.dataset.log){
+      try{ log = JSON.parse(el.dataset.logv || '[]'); }catch(_){ log = []; }
+      if(!Array.isArray(log)) log = [];
+      cntLogs.set(el, () => log);
+    }
+    const sum = () => log.reduce((n, x) => n + (+x.ml || 0), 0);
+    const val = () => Math.max(0, +input.value || 0);
+    const set = n => { input.value = n || ''; };   // 0이면 비워서 '아직 안 적음'으로
+
+    const paintLog = () => {
+      if(!logBox) return;
+      // 적힌 것보다 총량이 적으면 뒤에서부터 덜어낸다. 총량을 넘는 기록이
+      // 남아 있으면 그 목록은 거짓말이 된다.
+      while(log.length && sum() > val()) log.pop();
+      const rest = Math.round((val() - sum()) * 100) / 100;
+      logBox.innerHTML = log.map((x, i) =>
+        `<span class="tf-cnt-i" data-i="${i}"><b>${escapeHtml(x.at || '')}</b> ` +
+          `${fmtNum(x.ml)}${escapeHtml(unit)}` +
+          `<button type="button" class="tf-cnt-x" aria-label="이 기록 빼기">✕</button></span>`).join('') +
+        (rest > 0 && log.length ? `<span class="tf-cnt-i rest">그 밖에 ${fmtNum(rest)}${escapeHtml(unit)}</span>` : '');
+      logBox.querySelectorAll('.tf-cnt-x').forEach(x => x.addEventListener('click', () => {
+        const i = +x.closest('.tf-cnt-i').dataset.i;
+        const gone = log[i];
+        if(!gone) return;
+        log.splice(i, 1);
+        set(Math.max(0, Math.round((val() - (+gone.ml || 0)) * 100) / 100));
+        paintLog(); sync(); now();
+      }));
+    };
+
     el.querySelectorAll('.tf-add').forEach(b => b.addEventListener('click', () => {
-      const next = Math.max(0, Math.min(max,
-        Math.round(((+input.value || 0) + (+b.dataset.add)) * 100) / 100));
-      input.value = next || '';          // 0이면 비워서 '아직 안 적음'으로 되돌린다
-      sync();
-      now();
+      const d = +b.dataset.add;
+      let next;
+      if(log && d < 0 && log.length){
+        // 되돌리기는 마지막으로 누른 것을 뺀다 — 크기가 제각각이라
+        // '−250'으로는 방금 누른 500을 되돌릴 수 없다.
+        next = val() - (+log.pop().ml || 0);
+      }else{
+        if(log && d > 0) log.push({ at: hmNow(), ml: d });
+        next = val() + d;
+      }
+      set(Math.max(0, Math.min(max, Math.round(next * 100) / 100)));
+      paintLog(); sync(); now();
     }));
+    input.addEventListener('input', paintLog);
+    paintLog();
   });
   // 여럿 중 하나 — 고른 것을 다시 누르면 취소된다(잘못 눌렀을 때 되돌릴 길)
   own('.tf[data-type="choice"]').forEach(el => {

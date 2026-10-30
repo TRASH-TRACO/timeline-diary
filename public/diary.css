@@ -310,6 +310,16 @@ code{font-family:var(--font-mono);font-size:.92em;background:var(--bg3);padding:
 .tf-add:hover{border-color:var(--accent);background:var(--accent-bg);color:var(--accent);}
 .tf-add.minus{margin-left:auto;font-weight:500;color:var(--text3);}
 .tf-add.minus:hover{border-color:var(--border2);background:var(--bg3);color:var(--text);}
+/* 누른 때 — 여러 번 누르다 "아까 그거 눌렀나?"가 되지 않게 */
+.tf-cnt-log:not(:empty){display:flex;gap:5px;flex-wrap:wrap;margin-top:9px;}
+.tf-cnt-i{display:inline-flex;align-items:center;gap:4px;padding:3px 4px 3px 9px;font-size:11px;
+  font-family:var(--font-mono);border-radius:100px;background:var(--bg2);
+  border:1px solid var(--border);color:var(--text2);}
+.tf-cnt-i b{color:var(--accent);font-weight:600;}
+.tf-cnt-i.rest{padding-right:9px;color:var(--text3);border-style:dashed;}
+.tf-cnt-x{width:16px;height:16px;padding:0;border:none;border-radius:50%;line-height:1;
+  font-size:9px;cursor:pointer;background:transparent;color:inherit;opacity:.55;}
+.tf-cnt-x:hover{opacity:1;background:rgba(127,127,127,.22);}
 .tf-bar{height:5px;margin-top:10px;border-radius:100px;background:var(--bg3);overflow:hidden;}
 .tf-bar > i{display:block;height:100%;width:0;border-radius:100px;background:var(--accent);
   transition:width .2s;}
@@ -774,6 +784,7 @@ code{font-family:var(--font-mono);font-size:.92em;background:var(--bg3);padding:
   .sh-track input[type=checkbox]{width:18px;height:18px;}
   /* 같은 화면에서 손가락으로 누르는 것들도 조금 키운다 */
   .tf-tag{font-size:13px;}
-  .tf-tag-x{width:20px;height:20px;font-size:10px;}
+  .tf-tag-x,.tf-cnt-x{width:20px;height:20px;font-size:10px;}
+  .tf-cnt-i{font-size:12px;}
   .tf-sug-i{padding:10px 9px;}
 }
