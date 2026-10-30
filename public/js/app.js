@@ -103,9 +103,54 @@ function goToday(){
 window.shiftMonth = shiftMonth;
 window.goToday = goToday;
 
+// ── 달력 필터 ───────────────────────────────
+//
+// 트랙이 일곱 넘게 쌓이면 칸마다 배지가 줄줄이 서서, 정작 보려던 흐름이 묻힌다.
+// 하나만 남기면 그 달이 그 기록의 그래프가 된다 — "지난주에 여드름이 몇 개였지"는
+// 날짜를 하나씩 눌러 보는 대신 달력을 한 번 훑으면 끝나는 질문이다.
+//
+// 끈 것을 적어 둔다(켠 것이 아니라). 그래야 약을 새로 추가했을 때 저절로 보인다 —
+// 켠 것만 적어 두면 새 트랙은 아무도 켜 준 적이 없어서 영영 안 보인다.
+// 보는 방식일 뿐 기록이 아니라서 이 기기에만 담는다.
+const CALF_KEY = 'diary_calfilter';
+let _calOff = [];
+try{ const v = JSON.parse(localStorage.getItem(CALF_KEY) || '[]'); if(Array.isArray(v)) _calOff = v; }catch(_){}
+const calShows = id => !_calOff.includes(id);
+function setCalFilter(id, on){
+  _calOff = on ? _calOff.filter(x => x !== id) : _calOff.concat([id]).filter((x, i, a) => a.indexOf(x) === i);
+  try{ localStorage.setItem(CALF_KEY, JSON.stringify(_calOff)); }catch(_){}
+  renderCalendar();
+}
+/** 달력에 나올 수 있는 것들 — 트랙에 '일기'까지 */
+const calItems = () => DiaryTracks.all()
+  .filter(t => t.id === 'route' || typeof t.cell === 'function')
+  .map(t => ({ id: t.id, icon: t.icon, name: t.name }))
+  .concat([{ id: 'note', icon: '✎', name: '일기' }]);
+
+function renderCalFilter(){
+  const box = $('cal-filter');
+  if(!box) return;
+  const items = calItems();
+  const off = items.filter(i => !calShows(i.id)).length;
+  box.innerHTML = items.map(i =>
+    `<button type="button" class="cal-f${calShows(i.id) ? ' on' : ''}" ` +
+      `aria-pressed="${calShows(i.id)}" onclick="toggleCalFilter('${i.id}')">` +
+      `${escapeHtml(i.icon)} ${escapeHtml(i.name)}</button>`).join('') +
+    (off ? `<button type="button" class="cal-f all" onclick="showAllCal()">모두 보기</button>` : '');
+}
+function toggleCalFilter(id){ setCalFilter(id, !calShows(id)); }
+function showAllCal(){
+  _calOff = [];
+  try{ localStorage.setItem(CALF_KEY, '[]'); }catch(_){}
+  renderCalendar();
+}
+window.toggleCalFilter = toggleCalFilter;
+window.showAllCal = showAllCal;
+
 /** 캘린더 셀에 배지를 그리는 트랙들 (경로는 썸네일로 따로 그린다) */
 const cellTracks = () =>
-  DiaryTracks.all().filter(t => t.id !== 'route' && typeof t.cell === 'function');
+  DiaryTracks.all().filter(t =>
+    t.id !== 'route' && typeof t.cell === 'function' && calShows(t.id));
 
 function renderCalendar(){
   $('cal-title').textContent = calYear + '년 ' + (calMonth + 1) + '월';
@@ -130,7 +175,7 @@ function renderCalendar(){
   for(let d = 1; d <= days; d++){
     const ds = `${calYear}-${pad2(calMonth + 1)}-${pad2(d)}`;
     const rec = DiaryStore.getDay(ds);
-    const route = DiaryStore.getTrack(ds, 'route');
+    const route = calShows('route') ? DiaryStore.getTrack(ds, 'route') : null;
     const dow = (startDow + d - 1) % 7;
     const cell = document.createElement('div');
     cell.className = 'cal-cell';
@@ -145,7 +190,7 @@ function renderCalendar(){
     num.className = 'cal-dnum' + (dow === 0 ? ' sun' : dow === 6 ? ' sat' : '');
     num.textContent = d;
     head.appendChild(num);
-    if(rec && rec.note){
+    if(rec && rec.note && calShows('note')){
       const mk = document.createElement('span');
       mk.className = 'cal-note-mark';
       mk.textContent = '✎';
@@ -192,7 +237,10 @@ function renderMonthSummary(){
   const m = DiaryStore.getMonth(key, false);
   let routes = 0, notes = 0, dist = 0;
   const byTrack = {};
-  const sumTracks = DiaryTracks.all().filter(t => t.id !== 'route' && typeof t.summary === 'function');
+  // 요약도 필터를 따른다. 여드름만 보기로 해 놓고 요약에는 일곱 가지가 그대로
+  // 늘어서 있으면, 걸러 낸 보람이 반만 남는다.
+  const sumTracks = DiaryTracks.all()
+    .filter(t => t.id !== 'route' && typeof t.summary === 'function' && calShows(t.id));
   if(m) for(const ds of Object.keys(m.days).sort()){
     const d = m.days[ds];
     const rt = d.t && d.t.route && d.t.route.v;
@@ -204,14 +252,16 @@ function renderMonthSummary(){
     }
   }
   const parts = [];
-  if(routes) parts.push(`<span>경로 <b>${routes}</b>일</span>`, `<span>이동 <b>${fmtDist(dist)}</b></span>`);
-  if(notes)  parts.push(`<span>일기 <b>${notes}</b>편</span>`);
+  if(routes && calShows('route')) parts.push(`<span>경로 <b>${routes}</b>일</span>`, `<span>이동 <b>${fmtDist(dist)}</b></span>`);
+  if(notes && calShows('note'))   parts.push(`<span>일기 <b>${notes}</b>편</span>`);
   for(const id in byTrack){
     const t = DiaryTracks.trackById(id);
     const rows = t.summary(byTrack[id]);
     if(rows) rows.forEach(r => parts.push(`<span>${escapeHtml(r.k)} <b>${escapeHtml(String(r.v))}</b></span>`));
   }
-  el.innerHTML = parts.length ? parts.join('') : '<span class="dim">이 달은 아직 비어 있어요</span>';
+  el.innerHTML = parts.length ? parts.join('')
+    : `<span class="dim">${_calOff.length ? '고른 것은 이 달에 기록이 없어요' : '이 달은 아직 비어 있어요'}</span>`;
+  renderCalFilter();
   refreshLocalNote();
 }
 
@@ -444,7 +494,7 @@ function updateCellNoteMark(ds){
   const cell = document.querySelector('.cal-cell[data-ds="' + ds + '"]');
   if(!cell) return;
   const rec = DiaryStore.getDay(ds);
-  const has = !!(rec && rec.note);
+  const has = !!(rec && rec.note) && calShows('note');
   let mk = cell.querySelector('.cal-note-mark');
   if(has && !mk){
     mk = document.createElement('span');

@@ -94,6 +94,10 @@ setTimeout(function(){document.documentElement.classList.remove('booting');},200
     <button class="btn local-note-btn" onclick="retryPhotoSync()">다시 시도</button>
   </div>
 
+  <!-- 달력에 무엇을 보일지. 전부 켜 두면 칸마다 배지가 줄줄이 서서 정작
+       보려던 흐름이 묻힌다 — 하나만 켜면 그 달이 그 기록의 그래프가 된다 -->
+  <div class="cal-filter" id="cal-filter"></div>
+
   <div class="cal-sum" id="cal-sum"></div>
 
   <!-- 캘린더 + 하루 패널 -->

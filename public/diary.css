@@ -88,6 +88,14 @@ code{font-family:var(--font-mono);font-size:.92em;background:var(--bg3);padding:
 .toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px;}
 .cal-nav{display:flex;align-items:center;gap:6px;}
 .cal-title{font-size:16px;font-weight:700;letter-spacing:-.01em;min-width:112px;text-align:center;}
+/* 달력에 무엇을 보일지 — 하나만 켜면 그 달이 그 기록의 그래프가 된다 */
+.cal-filter{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px;}
+.cal-f{padding:4px 11px;font-size:11.5px;border-radius:100px;cursor:pointer;transition:all .12s;
+  border:1px solid var(--border);background:var(--bg);color:var(--text3);}
+.cal-f:hover{border-color:var(--border2);color:var(--text2);}
+.cal-f.on{background:var(--accent-bg);border-color:var(--accent);color:var(--accent);font-weight:600;}
+.cal-f.all{margin-left:4px;border-style:dashed;color:var(--text2);}
+.cal-f.all:hover{border-style:solid;border-color:var(--accent);color:var(--accent);}
 .cal-sum{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--text2);margin-bottom:12px;}
 .cal-sum b{color:var(--text);font-weight:600;}
 
@@ -786,5 +794,6 @@ code{font-family:var(--font-mono);font-size:.92em;background:var(--bg3);padding:
   .tf-tag{font-size:13px;}
   .tf-tag-x,.tf-cnt-x{width:20px;height:20px;font-size:10px;}
   .tf-cnt-i{font-size:12px;}
+  .cal-f{padding:6px 13px;font-size:12.5px;}
   .tf-sug-i{padding:10px 9px;}
 }
