@@ -392,6 +392,9 @@ code{font-family:var(--font-mono);font-size:.92em;background:var(--bg3);padding:
   padding:10px 12px 12px;}
 .tf-ev-hdr{display:flex;align-items:center;gap:8px;}
 .tf-ev-no{font-size:11px;font-weight:600;color:var(--text3);font-family:var(--font-mono);flex:none;}
+.tf-time{padding:5px 9px;font-size:13px;font-family:var(--font-mono);
+  border:1px solid var(--border);border-radius:var(--r2);background:var(--bg2);color:var(--text);}
+.tf-time:focus{outline:none;border-color:var(--accent);background:var(--bg);}
 .tf-ev-at{padding:4px 7px;font-size:13px;font-family:var(--font-mono);flex:none;
   border:1px solid var(--border);border-radius:var(--r2);background:var(--bg);color:var(--text);}
 .tf-ev-at:focus{outline:none;border-color:var(--accent);}
@@ -784,7 +787,7 @@ code{font-family:var(--font-mono);font-size:.92em;background:var(--bg3);padding:
  * 푼다. 데스크톱은 지금 크기가 맞으니 터치 기기에서만 적용한다.
  */
 @media (pointer: coarse){
-  .tf-input,.tf-text,.tf-tag-in,.tf-cnt-v,.tf-ev-at,.ac-note,.pn-note-input,.mg-med input,
+  .tf-input,.tf-text,.tf-tag-in,.tf-cnt-v,.tf-ev-at,.tf-time,.ac-note,.pn-note-input,.mg-med input,
   .mg-cup-in,
   .sh-range input{font-size:16px;}
   .tf-add,.tf-ev-add{padding:9px 16px;}
