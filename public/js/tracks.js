@@ -326,61 +326,6 @@ const ST_SHAPE = ['count', 'log.at', 'log.type', 'log.amt', 'log.dur',
 const AC_BASE = ['add.no', 'add.id', 'gone'];
 const AC_FULL = ['add.type', 'add.itch', 'add.x', 'add.y', 'add.note'];
 
-// ── 두드러기 ────────────────────────────────
-// 여드름과 생김새가 전혀 다르다. 여드름은 한 자리에 며칠을 사는 개체라 번호를
-// 붙여 쫓지만, 두드러기는 올라왔다 몇 시간 만에 가라앉는 **한 차례의 일**이고
-// 자리도 그때그때 옮겨 다닌다. 그래서 번호를 붙이지 않고, 변처럼 그날 있었던
-// 일로 적는다.
-const HIVE_AREAS = [
-  { key: 'fc', label: '얼굴·목' },
-  { key: 'ar', label: '팔·손' },
-  { key: 'bd', label: '몸통' },
-  { key: 'bk', label: '등' },
-  { key: 'lg', label: '다리·발' },
-];
-// 두드러기를 두드러기이게 하는 건 가려움이다. 그랬다/아니다로는 "참을 만했다"와
-// "밤새 못 잤다"가 같은 칸에 들어간다.
-const HIVE_ITCH = [
-  { v: 1, name: '약함' },
-  { v: 2, name: '보통' },
-  { v: 3, name: '심함' },
-];
-const HIVE_SPREAD = [
-  { v: 1, name: '몇 군데' },
-  { v: 2, name: '넓게' },
-];
-
-const HIVE_EV = [
-  { key: 'itch', type: 'choice', label: '가려움', options: HIVE_ITCH, briefPre: '가려움 ' },
-  { key: 'spread', type: 'choice', label: '범위', options: HIVE_SPREAD },
-].concat(HIVE_AREAS.map(a => ({ key: a.key, type: 'bool', label: a.label, narrow: true })))
- .concat([
-  // 올라온 때는 사건이 이미 갖고 있다(at). 가라앉은 때를 같이 적어야 "얼마나
-  // 갔나"를 물을 수 있다 — 두드러기는 그 길이가 곧 증상의 무게다.
-  { key: 'end', type: 'time', label: '가라앉은 때', narrow: true,
-    briefPre: '~ ' },
-  { key: 'why', type: 'text', label: '짚이는 것', max: 100, rows: 1,
-    placeholder: '먹은 것·더웠다·땀·약 같은 걸 짧게' },
-  { key: 'photos', type: 'photo', label: '사진', max: 2 },
-  { key: 'note', type: 'text', label: '메모', max: 200, rows: 1,
-    placeholder: '그 밖에 남길 것' },
-]);
-
-const hiveLog = v => (v && Array.isArray(v.log) ? v.log : []);
-/** 올라와서 가라앉기까지 몇 분. 자정을 넘긴 것은 넘긴 대로 센다. */
-function hiveMin(e){
-  if(!e || !e.at || !e.end) return null;
-  const m = t => (+t.slice(0, 2)) * 60 + (+t.slice(3, 5));
-  const d = m(e.end) - m(e.at);
-  return d >= 0 ? d : d + 1440;
-}
-const fmtMin = n => (n >= 60
-  ? Math.floor(n / 60) + '시간' + (n % 60 ? ' ' + (n % 60) + '분' : '')
-  : n + '분');
-
-const HV_BASE = ['count', 'log.at', 'log.end'];
-const HV_WHERE = ['log.itch', 'log.spread'].concat(HIVE_AREAS.map(a => 'log.' + a.key));
-
 const TRACKS = [
   {
     id: 'route',
@@ -547,61 +492,6 @@ const TRACKS = [
       }
       const live = DiaryAcne.roster().filter(s => !s.gone).length;
       if(live) rows.push({ k: '아직 있는 것', v: live + '개' });
-      return rows;
-    },
-  },
-  {
-    id: 'hives',
-    name: '두드러기',
-    icon: '💢',
-    desc: '올라올 때마다 하나씩 — 어디에, 얼마나 가렵고, 언제 가라앉았는지',
-    fields: [
-      { key: 'log', type: 'events', label: '이 날 올라온 두드러기', item: '두드러기',
-        add: '두드러기 추가', unit: '번', max: 20, fields: HIVE_EV },
-      // 폼에는 안 나온다. 센 숫자를 담아 두는 칸이다(변의 횟수와 같다).
-      { key: 'count', type: 'number', label: '횟수', unit: '번', hidden: true },
-    ],
-    derive: v => (Array.isArray(v.log) ? { ...v, count: v.log.length } : v),
-    cell(v){
-      if(!v) return null;
-      const log = hiveLog(v);
-      const n = v.count != null ? v.count : log.length;
-      if(!n) return null;
-      // 가장 심했던 가려움을 같이 적는다 — 세 번 올라왔어도 다 약했던 날과
-      // 한 번인데 밤새 긁은 날은 달력에서 구별돼야 한다.
-      const worst = log.reduce((m, e) => Math.max(m, e.itch || 0), 0);
-      const w = (HIVE_ITCH.find(x => x.v === worst) || {}).name;
-      return { badge: n + '번' + (w ? '·' + w : '') };
-    },
-    share: [
-      { id: 'count', name: '횟수만', fields: ['count'], recommended: true },
-      { id: 'where', name: '부위·정도까지', fields: HV_BASE.concat(HV_WHERE) },
-      { id: 'all', name: '메모까지', fields: HV_BASE.concat(HV_WHERE, ['log.why', 'log.note']),
-        sensitive: true, desc: '짚이는 것과 메모가 함께 나갑니다' },
-      { id: 'photo', name: '사진까지',
-        fields: HV_BASE.concat(HV_WHERE, ['log.why', 'log.note', 'log.photos']),
-        sensitive: true, desc: '두드러기 사진이 함께 나갑니다' },
-    ],
-    summary(entries){
-      const days = entries.filter(e => e.v && (e.v.count || hiveLog(e.v).length));
-      if(!days.length) return null;
-      const all = [];
-      days.forEach(e => hiveLog(e.v).forEach(x => all.push(x)));
-      const total = days.reduce((n, e) => n + (e.v.count || hiveLog(e.v).length), 0);
-      const rows = [{ k: '두드러기', v: days.length + '일' }];
-      if(total) rows.push({ k: '올라온 횟수', v: total + '번' });
-      const bad = all.filter(x => x.itch === 3).length;
-      if(bad) rows.push({ k: '심한 가려움', v: bad + '번' });
-      const wide = all.filter(x => x.spread === 2).length;
-      if(wide) rows.push({ k: '넓게 번짐', v: wide + '번' });
-      // 얼마나 가는지는 두드러기에서 가장 먼저 묻는 것이다
-      const lasted = all.map(hiveMin).filter(n => n != null);
-      if(lasted.length) rows.push({ k: '평균 지속',
-        v: fmtMin(Math.round(lasted.reduce((a, b) => a + b, 0) / lasted.length)) });
-      // 어느 자리에 가장 자주 올라오는지
-      const by = HIVE_AREAS.map(a => [a.label, all.filter(x => x[a.key]).length])
-        .filter(x => x[1]).sort((p, q) => q[1] - p[1]);
-      if(by.length) rows.push({ k: '자주 나는 곳', v: `${by[0][0]} ${by[0][1]}번` });
       return rows;
     },
   },
@@ -1091,13 +981,6 @@ function fieldsHtml(track, val){
           `${escapeHtml(f.label)}</button>` +
       `</div>`;
     }
-    if(f.type === 'time'){
-      return `<div class="tf${f.narrow ? ' tf-narrow' : ''}" data-key="${f.key}" data-type="time">` +
-        `<label class="tf-label" for="${id}">${escapeHtml(f.label)}</label>` +
-        `<input id="${id}" class="tf-time" type="time" value="${escapeHtml(v[f.key] || '')}">` +
-        (f.hint ? `<div class="tf-opt-d">${escapeHtml(f.hint)}</div>` : '') +
-      `</div>`;
-    }
     if(f.type === 'text'){
       const cur = v[f.key] || '';
       const rows = f.rows || 2;
@@ -1135,7 +1018,6 @@ function evBrief(f, v){
       bits.push((sf.briefPre || '') + (o ? o.name : x) + (sf.brief || ''));
       continue;
     }
-    if(sf.type === 'time'){ bits.push((sf.briefPre || '') + x); continue; }
     if(sf.type === 'text'){
       // 어디서 자를지는 칸 너비가 정한다(CSS ellipsis). 여기서 16자로 미리 잘라
       // 두면 넓은 화면에서도 메모가 세 마디에서 끊긴다.
@@ -1195,7 +1077,6 @@ function fieldText(f, val){
   if(Array.isArray(val)) return (!f || f.type === 'photo') ? `사진 ${val.length}장` : val.join(', ');
   if(!f) return String(val);
   if(f.type === 'bool')   return val ? '예' : '아니오';
-  if(f.type === 'time')   return String(val);
   if(f.type === 'choice'){
     const o = (f.options || []).find(x => x.v === val);
     // 설명 안에 이미 —가 들어 있을 수 있어서 괄호로 감싼다
@@ -1254,9 +1135,6 @@ function wireFields(box, track, onChange){
         // 숫자로 되돌려 저장한다 — 나중에 크기를 비교할 수 있어야 한다.
         const raw = el.dataset.v;
         if(raw !== '') out[key] = isFinite(+raw) ? +raw : raw;
-      }else if(el.dataset.type === 'time'){
-        const t = el.querySelector('.tf-time').value;
-        if(t) out[key] = t;
       }else if(el.dataset.type === 'bool'){
         // 아니라고 답한 것과 아직 안 적은 것은 같다 — 굳이 false를 남기지 않는다
         if(el.dataset.v) out[key] = true;
@@ -1543,8 +1421,6 @@ function wireFields(box, track, onChange){
     wrap.addEventListener('click', e => { if(e.target === wrap) input.focus(); });
     paint();
   });
-  own('.tf[data-type="time"]').forEach(el =>
-    el.querySelector('.tf-time').addEventListener('change', now));
   own('.tf[data-type="bool"]').forEach(el => {
     const b = el.querySelector('.tf-bool');
     b.addEventListener('click', () => {
@@ -1746,7 +1622,5 @@ window.DiaryTracks = {
   mealKinds, mealKindsIn, foodIndex, foodSuggest,
   eventsOf, evField, evOrder, photoIdsIn, stoolLog, stoolCount,
   cups, addCup, removeCup, CUPS_KEY, fmtMl,
-  hiveLog, hiveMin,
   SETTING_KEY, MEDS_KEY, BRISTOL, STOOL_AMT, STOOL_DUR, MEALS, SKIN_AREAS,
-  HIVE_AREAS, HIVE_ITCH, HIVE_SPREAD,
 };

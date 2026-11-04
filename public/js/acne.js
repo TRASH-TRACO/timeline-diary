@@ -28,6 +28,9 @@ const AC_SHOT_MAX = 3;
 const AC_TYPES = [
   { v: 'c', name: '좁쌀',   desc: '피지가 막힌 작은 알갱이 (면포)' },
   { v: 'i', name: '염증성', desc: '붉게 부어오른 것 (구진·농포)' },
+  // 여드름은 아니지만 같은 얼굴 같은 자리를 두고 묻게 된다 — "어제 턱에 난 게
+  // 그거였나". 다른 데 적어 두면 그 비교를 할 수가 없어서 여기 같이 둔다.
+  { v: 'h', name: '두드러기', desc: '부풀었다 가라앉는 발진 (팽진)' },
 ];
 const acTypeOf = v => AC_TYPES.find(t => t.v === v) || null;
 
