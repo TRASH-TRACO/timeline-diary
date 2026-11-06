@@ -561,6 +561,7 @@ const TRACKS = [
       // 바로 따라붙는다 — 트랙 선언을 다시 만들 필요가 없다.
       { key: 'ml', type: 'counter', label: '마신 양', unit: 'ml',
         get add(){ return cups(); }, max: 9000, step: 50, goal: WATER_GOAL,
+        free: true,                      // 어쩌다 마시는 것 — 캔 음료, 식당 물컵
         // 누른 때를 'log'에 적는다. 여러 번 누르다 보면 "아까 그거 눌렀나?"가
         // 되는데, 그건 머리로 헤아릴 일이 아니라 적어 두면 끝나는 일이다.
         log: 'log' },
@@ -893,7 +894,18 @@ function fieldsHtml(track, val){
           (f.goal ? `<span class="tf-cnt-goal">/ ${fmtNum(f.goal)}${unit}</span>` : '') +
           `<span class="tf-cnt-pct"></span>` +
         `</div>` +
-        `<div class="tf-adds">${btns}</div>` +
+        `<div class="tf-adds">${btns}` +
+          // 늘 쓰는 컵 말고 어쩌다 마시는 것 — 캔 음료, 식당 물컵, 받아 온 커피.
+          // 그걸 위해 컵을 하나 더 등록하게 하면 목록만 길어진다. 총량 칸은
+          // 덮어쓰는 칸이라 이 일에 못 쓴다.
+          (f.free ? `<span class="tf-free">` +
+            `<input class="tf-free-v" type="number" ` +
+              `inputmode="${f.step === 'any' ? 'decimal' : 'numeric'}" min="1" max="${f.max}" ` +
+              `step="${f.step || 1}" placeholder="직접" ` +
+              `aria-label="한 번 쓰는 양 (${escapeHtml(f.unit || '')})">` +
+            `<button type="button" class="tf-free-add">＋ 추가</button>` +
+          `</span>` : '') +
+        `</div>` +
         (f.goal ? `<div class="tf-bar"><i></i></div>` : '') +
         // 여러 번 누르다 보면 "아까 그거 눌렀나?"가 된다. 누른 때가 보이면
         // 헤아릴 것이 없다.
@@ -1217,6 +1229,25 @@ function wireFields(box, track, onChange){
         paintLog(); sync(); now();
       }));
     };
+
+    // 한 번 쓰는 양 — 더하고 비운다. 컵 단추와 똑같이 때도 같이 남는다.
+    const freeV = el.querySelector('.tf-free-v');
+    const freeB = el.querySelector('.tf-free-add');
+    if(freeV && freeB){
+      const addFree = () => {
+        const d = Math.round((+freeV.value || 0) * 100) / 100;
+        if(!(d > 0)){ freeV.focus(); return; }
+        if(log) log.push({ at: hmNow(), ml: d });
+        set(Math.max(0, Math.min(max, Math.round((val() + d) * 100) / 100)));
+        freeV.value = '';                 // 다음에 또 쓸 수 있게 비워 둔다
+        paintLog(); sync(); now();
+      };
+      freeB.addEventListener('click', addFree);
+      // 숫자를 치고 Enter는 손이 먼저 하는 일이다. 단추까지 가게 하지 않는다.
+      freeV.addEventListener('keydown', e => {
+        if(e.key === 'Enter'){ e.preventDefault(); addFree(); }
+      });
+    }
 
     el.querySelectorAll('.tf-add').forEach(b => b.addEventListener('click', () => {
       const d = +b.dataset.add;

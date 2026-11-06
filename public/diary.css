@@ -317,6 +317,14 @@ code{font-family:var(--font-mono);font-size:.92em;background:var(--bg3);padding:
   border:1px solid var(--border2);background:var(--bg);color:var(--text2);}
 .tf-add:hover{border-color:var(--accent);background:var(--accent-bg);color:var(--accent);}
 .tf-add.minus{margin-left:auto;font-weight:500;color:var(--text3);}
+/* 한 번 쓰는 양 — 컵 단추들과 한 줄에 선다 */
+.tf-free{display:inline-flex;align-items:center;gap:5px;}
+.tf-free-v{width:72px;padding:6px 9px;font-size:13px;font-family:var(--font-mono);text-align:right;
+  border:1px solid var(--border);border-radius:var(--r2);background:var(--bg2);color:var(--text);}
+.tf-free-v:focus{outline:none;border-color:var(--accent);background:var(--bg);}
+.tf-free-add{padding:7px 12px;font-size:12px;font-weight:600;border-radius:100px;cursor:pointer;
+  transition:all .12s;border:1px dashed var(--border2);background:var(--bg);color:var(--text2);}
+.tf-free-add:hover{border-style:solid;border-color:var(--accent);background:var(--accent-bg);color:var(--accent);}
 .tf-add.minus:hover{border-color:var(--border2);background:var(--bg3);color:var(--text);}
 /* 누른 때 — 여러 번 누르다 "아까 그거 눌렀나?"가 되지 않게 */
 .tf-cnt-log:not(:empty){display:flex;gap:5px;flex-wrap:wrap;margin-top:9px;}
@@ -791,7 +799,7 @@ code{font-family:var(--font-mono);font-size:.92em;background:var(--bg3);padding:
   .tf-input,.tf-text,.tf-tag-in,.tf-cnt-v,.tf-ev-at,.ac-note,.pn-note-input,.mg-med input,
   .mg-cup-in,
   .sh-range input{font-size:16px;}
-  .tf-add,.tf-ev-add{padding:9px 16px;}
+  .tf-add,.tf-ev-add,.tf-free-add{padding:9px 16px;}
   .sh-lv{padding:7px 13px;font-size:12.5px;}
   .sh-track input[type=checkbox]{width:18px;height:18px;}
   /* 같은 화면에서 손가락으로 누르는 것들도 조금 키운다 */
