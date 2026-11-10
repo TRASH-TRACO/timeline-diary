@@ -1622,15 +1622,77 @@ function wireFields(box, track, onChange){
   return { read, flush(){ clearTimeout(timer); onChange(read()); } };
 }
 
-/** 사진 크게 보기 */
-function openShot(id){
+/**
+ * 사진에 얹는 화살표.
+ *
+ * 사진에 그려 넣지 않고 자리만 적어 둔다(0~1). 원본을 건드리지 않으니 몇 번이고
+ * 옮길 수 있고, 다시 그릴 때마다 사진이 뭉개지지도 않는다.
+ *
+ * 꼬리는 늘 사진 안쪽에서 온다. 가장자리에 찍힌 자리를 바깥에서 가리키면
+ * 화살표가 화면 밖으로 나간다 — 네 귀퉁이 중 어디냐에 따라 돌려 세운다.
+ */
+const SHOT_ARROW =
+  '<svg viewBox="0 0 64 64" aria-hidden="true">' +
+    '<path class="ar-l" d="M7 7 L25 25"/>' +
+    '<path class="ar-h" d="M27 27 L16.5 24 L24 16.5 Z"/>' +
+    '<circle class="ar-r" cx="36" cy="36" r="10"/>' +
+  '</svg>';
+const shotRot = m => (m.x < .5 ? (m.y < .5 ? 180 : 90) : (m.y < .5 ? 270 : 0));
+
+/**
+ * 사진 크게 보기.
+ * @param opts {mark, onMark} — 주면 눌러서 화살표를 놓을 수 있다
+ */
+function openShot(id, opts){
+  const o = opts || {};
   DiaryPhotos.url(id).then(u => {
     if(!u) return;
+    let mark = o.mark || null;
     const box = document.createElement('div');
     box.className = 'shot-view';
-    box.innerHTML = `<img src="${u}" alt=""><button class="shot-x" aria-label="닫기">✕</button>`;
+    box.innerHTML =
+      `<div class="shot-wrap"><img src="${u}" alt="">` +
+        `<div class="shot-mark" hidden>${SHOT_ARROW}</div>` +
+      `</div>` +
+      (o.onMark
+        ? `<div class="shot-bar">` +
+            `<span class="shot-tip">사진을 누르면 그 자리를 가리킵니다</span>` +
+            `<button type="button" class="shot-btn clear"${mark ? '' : ' hidden'}>화살표 지우기</button>` +
+          `</div>`
+        : '') +
+      `<button class="shot-x" aria-label="닫기">✕</button>`;
+
+    const el = box.querySelector('.shot-mark');
+    const clear = box.querySelector('.shot-btn.clear');
+    const paint = () => {
+      el.hidden = !mark;
+      if(clear) clear.hidden = !mark;
+      if(!mark) return;
+      el.style.left = (mark.x * 100) + '%';
+      el.style.top  = (mark.y * 100) + '%';
+      el.style.setProperty('--rot', shotRot(mark) + 'deg');
+    };
+    paint();
+
     const close = () => box.remove();
-    box.addEventListener('click', close);
+    // 바탕을 누르면 닫고, 사진을 누르면 가리킨다. 표시를 놓으려고 누른 것이
+    // 닫기가 되면 한 번도 못 놓는다.
+    box.addEventListener('click', e => {
+      if(e.target.closest('.shot-btn, .shot-wrap')) return;
+      close();
+    });
+    box.querySelector('.shot-x').addEventListener('click', close);
+    if(o.onMark){
+      const img = box.querySelector('img');
+      img.addEventListener('click', e => {
+        const r = img.getBoundingClientRect();
+        const f = (v, len) => Math.round(Math.min(1, Math.max(0, v / len)) * 1000) / 1000;
+        mark = { x: f(e.clientX - r.left, r.width), y: f(e.clientY - r.top, r.height) };
+        paint();
+        o.onMark(mark);
+      });
+      clear.addEventListener('click', () => { mark = null; paint(); o.onMark(null); });
+    }
     document.addEventListener('keydown', function esc(e){
       if(e.key === 'Escape'){ close(); document.removeEventListener('keydown', esc); }
     });
@@ -1647,7 +1709,7 @@ function defaultShareLevel(track){
 window.DiaryTracks = {
   all, trackById, defaultShareLevel, tracksFor, tracksOffFor,
   isOn, setOn, isOnDay, setOnDay, migrateDefaults,
-  fieldsHtml, fieldText, wireFields, openShot,
+  fieldsHtml, fieldText, wireFields, openShot, SHOT_ARROW, shotRot,
   meds, addMed, renameMed, removeMed, MED_PREFIX,
   toTags, tagName, tagQty, tagLabel, TAG_SEP,
   mealKinds, mealKindsIn, foodIndex, foodSuggest,

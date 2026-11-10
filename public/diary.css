@@ -557,9 +557,34 @@ code{font-family:var(--font-mono);font-size:.92em;background:var(--bg3);padding:
 .ac-act.del:hover{border-color:var(--red);color:var(--red);}
 
 /* 사진 크게 보기 */
-.shot-view{position:fixed;inset:0;z-index:3000;display:flex;align-items:center;justify-content:center;
-  background:rgba(2,6,23,.9);padding:24px;cursor:zoom-out;}
-.shot-view img{max-width:100%;max-height:100%;border-radius:var(--r2);box-shadow:var(--shadow2);}
+.shot-view{position:fixed;inset:0;z-index:3000;display:flex;flex-direction:column;gap:12px;
+  align-items:center;justify-content:center;background:rgba(2,6,23,.9);padding:24px;cursor:zoom-out;}
+/* 사진에 꼭 맞는 상자. 화살표 자리(0~1)가 사진에 그대로 얹히려면, 겉상자가
+   아니라 사진과 같은 크기여야 한다 */
+.shot-wrap{position:relative;display:inline-block;line-height:0;max-width:100%;min-height:0;}
+.shot-view img{max-width:100%;max-height:calc(100vh - 140px);border-radius:var(--r2);
+  box-shadow:var(--shadow2);cursor:crosshair;}
+
+/* 어느 여드름을 찍은 건지 가리키는 화살표. 사진에 그려 넣지 않고 얹기만 한다 */
+.shot-mark{position:absolute;width:64px;height:64px;pointer-events:none;
+  transform:translate(-50%,-50%) rotate(var(--rot,0deg));transform-origin:50% 50%;}
+.shot-mark svg{width:100%;height:100%;overflow:visible;}
+.shot-mark .ar-l{fill:none;stroke:#fff;stroke-width:4;stroke-linecap:round;
+  filter:drop-shadow(0 0 2px rgba(2,6,23,.85));}
+.shot-mark .ar-h{fill:#fff;filter:drop-shadow(0 0 2px rgba(2,6,23,.85));}
+.shot-mark .ar-r{fill:none;stroke:#fff;stroke-width:3;
+  filter:drop-shadow(0 0 2px rgba(2,6,23,.85));}
+.shot-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;cursor:default;}
+.shot-tip{font-size:11.5px;color:rgba(255,255,255,.72);}
+.shot-btn{padding:6px 14px;font-size:12px;font-weight:600;border-radius:100px;cursor:pointer;
+  border:1px solid rgba(255,255,255,.3);background:rgba(255,255,255,.1);color:#fff;}
+.shot-btn:hover{background:rgba(255,255,255,.22);}
+.shot-btn[hidden]{display:none;}
+
+/* 작은 사진에서는 고리만 — 화살표까지 그리면 정작 사진이 안 보인다 */
+.ac-shot-m{position:absolute;width:15px;height:15px;margin:-7.5px 0 0 -7.5px;border-radius:50%;
+  border:2px solid #fff;box-shadow:0 0 0 1px rgba(2,6,23,.6),0 0 3px rgba(2,6,23,.8);
+  pointer-events:none;}
 .shot-x{position:absolute;top:16px;right:16px;width:36px;height:36px;border:none;border-radius:50%;
   background:rgba(255,255,255,.15);color:#fff;font-size:15px;cursor:pointer;}
 .shot-x:hover{background:rgba(255,255,255,.28);}

@@ -63,7 +63,8 @@ function acRoster(){
       (v.shot || []).forEach(g => {
         const prev = byId.get(g && g.id);
         if(!prev || !Array.isArray(g.photos) || !g.photos.length) return;
-        (prev.shots || (prev.shots = [])).push({ ds, photos: g.photos.slice() });
+        (prev.shots || (prev.shots = [])).push({
+          ds, photos: g.photos.slice(), marks: { ...(g.marks || {}) } });
       });
       (v.gone || []).forEach(id => {
         const prev = byId.get(id);
@@ -233,10 +234,49 @@ async function acRemoveShot(photoId){
   return acStep(`${s.no}번 사진 빼기`, async () => {
     const g = s.shots.find(g => g.photos.includes(photoId));
     const d = acDayOf(g.ds);
-    const shot = (d.shot || []).map(x => ({ ...x, photos: (x.photos || []).filter(p => p !== photoId) }));
+    const shot = (d.shot || []).map(x => {
+      if(!(x.photos || []).includes(photoId)) return x;
+      const marks = { ...(x.marks || {}) };
+      delete marks[photoId];                 // 사진이 가면 그 화살표도 간다
+      const out = { ...x, photos: x.photos.filter(p => p !== photoId), marks };
+      if(!Object.keys(marks).length) delete out.marks;
+      return out;
+    });
     await acSave(g.ds, { ...d, shot });
     // 알맹이는 지금 지우지 않는다 — 되돌리기 칸에서 밀려날 때 함께 사라진다
     if(_acBatch) _acBatch.photos.push(photoId);
+  });
+}
+
+/** 이 사진에 찍어 둔 화살표 자리 */
+function acMarkOf(photoId){
+  for(const s of acRoster())
+    for(const g of (s.shots || []))
+      if(g.photos.includes(photoId)) return (g.marks || {})[photoId] || null;
+  return null;
+}
+/**
+ * 화살표를 놓거나 거둔다.
+ *
+ * 사진에 그려 넣지 않고 자리만 적는다 — 여드름은 점이라, 사진만 봐서는 어느
+ * 것을 가리키는지 알 수가 없다. 그렇다고 사진에 그려 버리면 옮길 수도 없고
+ * 다시 저장할 때마다 조금씩 뭉개진다.
+ */
+async function acSetMark(photoId, m){
+  const s = acRoster().find(x => (x.shots || []).some(g => g.photos.includes(photoId)));
+  if(!s) return;
+  const g = s.shots.find(g => g.photos.includes(photoId));
+  return acStep(`${s.no}번 사진 ${m ? '화살표' : '화살표 지우기'}`, async () => {
+    const d = acDayOf(g.ds);
+    const shot = (d.shot || []).map(x => {
+      if(!x.photos || !x.photos.includes(photoId)) return x;
+      const marks = { ...(x.marks || {}) };
+      if(m) marks[photoId] = { x: m.x, y: m.y }; else delete marks[photoId];
+      const out = { ...x, marks };
+      if(!Object.keys(marks).length) delete out.marks;
+      return out;
+    });
+    await acSave(g.ds, { ...d, shot });
   });
 }
 
@@ -433,12 +473,16 @@ function acShotsHtml(s, ds){
   const shots = (s.shots || []).slice().sort((a, b) => (a.ds < b.ds ? -1 : 1));
   const today = shots.find(g => g.ds === ds);
   const full = !!(today && today.photos.length >= AC_SHOT_MAX);
-  const cells = shots.map(g => g.photos.map(pid =>
-    `<div class="tf-shot ac-shot" data-id="${escapeHtml(pid)}">` +
+  const cells = shots.map(g => g.photos.map(pid => {
+    const m = (g.marks || {})[pid];
+    return `<div class="tf-shot ac-shot" data-id="${escapeHtml(pid)}">` +
       `<img alt="" loading="lazy">` +
+      // 작은 사진에서는 고리만. 화살표까지 그리면 사진이 안 보인다.
+      (m ? `<span class="ac-shot-m" style="left:${m.x * 100}%;top:${m.y * 100}%"></span>` : '') +
       `<button type="button" class="tf-shot-x" title="사진 빼기" aria-label="사진 빼기">✕</button>` +
       `<span class="ac-shot-d">${acDays(g.ds, s)}일째</span>` +
-    `</div>`).join('')).join('');
+    `</div>`;
+  }).join('')).join('');
   return `<div class="ac-shots">` +
     `<div class="ac-shots-t">사진</div>` +
     `<div class="tf-shots">${cells}` +
@@ -650,7 +694,13 @@ function acWireShots(row, id, ds, redraw){
     if(u) img.src = u; else sh.classList.add('missing');
   });
   wrap.querySelectorAll('.ac-shot').forEach(sh => {
-    sh.querySelector('img').addEventListener('click', () => DiaryTracks.openShot(sh.dataset.id));
+    sh.querySelector('img').addEventListener('click', () => {
+      const pid = sh.dataset.id;
+      DiaryTracks.openShot(pid, {
+        mark: acMarkOf(pid),
+        onMark: async m => { await acSetMark(pid, m); redraw(); acAfterWrite(ds); },
+      });
+    });
     sh.querySelector('.tf-shot-x').addEventListener('click', async e => {
       e.stopPropagation();
       await acRemoveShot(sh.dataset.id);
@@ -702,6 +752,7 @@ window.DiaryAcne = {
   roster: acRoster, liveOn: acLiveOn, goneOn: acGoneOn, days: acDays, lived: acLived,
   add: acAdd, edit: acEdit, setGone: acSetGone, remove: acRemove,
   addShot: acAddShot, removeShot: acRemoveShot, SHOT_MAX: AC_SHOT_MAX,
+  markOf: acMarkOf, setMark: acSetMark,
   undo: acUndo, canUndo: acCanUndo, undoLabel: acUndoLabel,
   render: acRender, faceSvg: acFaceSvg,
 };
