@@ -1633,11 +1633,26 @@ function wireFields(box, track, onChange){
  */
 const SHOT_ARROW =
   '<svg viewBox="0 0 64 64" aria-hidden="true">' +
-    '<path class="ar-l" d="M7 7 L25 25"/>' +
-    '<path class="ar-h" d="M27 27 L16.5 24 L24 16.5 Z"/>' +
-    '<circle class="ar-r" cx="36" cy="36" r="10"/>' +
+    '<path class="ar-l" d="M4 4 L17 17"/>' +
+    '<path class="ar-h" d="M23.5 23.5 L13 20.5 L20.5 13 Z"/>' +
+    // 고리는 상자 한가운데에 둔다. 누른 자리도 상자 한가운데라서,
+    // 크기를 키우면 고리가 그 자리에 그대로 머물며 커진다.
+    '<circle class="ar-r" cx="32" cy="32" r="10"/>' +
   '</svg>';
 const shotRot = m => (m.x < .5 ? (m.y < .5 ? 180 : 90) : (m.y < .5 ? 270 : 0));
+/**
+ * 표시의 크기 — 사진 너비의 몇 %인가.
+ *
+ * 화면의 px이 아니라 사진에 대한 비율로 적는다. 같은 사진을 휴대폰에서 보든
+ * 노트북에서 보든 고리가 가리키는 자리와 크기가 같아야 한다.
+ *
+ * 턱에 난 것 하나를 집을 때와 이마에 올라온 무리를 통째로 두를 때는 필요한
+ * 크기가 다르다. 그래서 고정값이 아니라 조절할 수 있게 둔다.
+ */
+const MARK_S = { min: 10, max: 70, step: 2, def: 26 };
+const markS = m => Math.min(MARK_S.max, Math.max(MARK_S.min, +(m && m.s) || MARK_S.def));
+// 하나를 그 크기로 맞췄으면 다음 것도 대개 그만하다 — 이 화면을 보는 동안 기억한다
+let _markS = MARK_S.def;
 
 /**
  * 사진 크게 보기.
@@ -1657,6 +1672,10 @@ function openShot(id, opts){
       (o.onMark
         ? `<div class="shot-bar">` +
             `<span class="shot-tip">사진을 누르면 그 자리를 가리킵니다</span>` +
+            `<label class="shot-size"${mark ? '' : ' hidden'}>크기` +
+              `<input type="range" min="${MARK_S.min}" max="${MARK_S.max}" ` +
+                `step="${MARK_S.step}" value="${markS(mark)}" aria-label="표시 크기">` +
+            `</label>` +
             `<button type="button" class="shot-btn clear"${mark ? '' : ' hidden'}>화살표 지우기</button>` +
           `</div>`
         : '') +
@@ -1664,13 +1683,19 @@ function openShot(id, opts){
 
     const el = box.querySelector('.shot-mark');
     const clear = box.querySelector('.shot-btn.clear');
+    const sizeBox = box.querySelector('.shot-size');
+    const slider = sizeBox && sizeBox.querySelector('input');
     const paint = () => {
       el.hidden = !mark;
       if(clear) clear.hidden = !mark;
+      if(sizeBox) sizeBox.hidden = !mark;
       if(!mark) return;
       el.style.left = (mark.x * 100) + '%';
       el.style.top  = (mark.y * 100) + '%';
+      // 크기는 사진 너비의 %다. 겉상자가 아니라 사진에 대고 재야 한다.
+      el.style.width = markS(mark) + '%';
       el.style.setProperty('--rot', shotRot(mark) + 'deg');
+      if(slider) slider.value = markS(mark);
     };
     paint();
 
@@ -1687,10 +1712,18 @@ function openShot(id, opts){
       img.addEventListener('click', e => {
         const r = img.getBoundingClientRect();
         const f = (v, len) => Math.round(Math.min(1, Math.max(0, v / len)) * 1000) / 1000;
-        mark = { x: f(e.clientX - r.left, r.width), y: f(e.clientY - r.top, r.height) };
+        mark = { x: f(e.clientX - r.left, r.width), y: f(e.clientY - r.top, r.height), s: _markS };
         paint();
         o.onMark(mark);
       });
+      // 끄는 동안에는 화면만 따라오고, 손을 뗄 때 한 번 저장한다
+      slider.addEventListener('input', () => {
+        if(!mark) return;
+        mark = { ...mark, s: +slider.value };
+        _markS = mark.s;
+        paint();
+      });
+      slider.addEventListener('change', () => { if(mark) o.onMark(mark); });
       clear.addEventListener('click', () => { mark = null; paint(); o.onMark(null); });
     }
     document.addEventListener('keydown', function esc(e){
@@ -1709,7 +1742,7 @@ function defaultShareLevel(track){
 window.DiaryTracks = {
   all, trackById, defaultShareLevel, tracksFor, tracksOffFor,
   isOn, setOn, isOnDay, setOnDay, migrateDefaults,
-  fieldsHtml, fieldText, wireFields, openShot, SHOT_ARROW, shotRot,
+  fieldsHtml, fieldText, wireFields, openShot, SHOT_ARROW, shotRot, markS, MARK_S,
   meds, addMed, renameMed, removeMed, MED_PREFIX,
   toTags, tagName, tagQty, tagLabel, TAG_SEP,
   mealKinds, mealKindsIn, foodIndex, foodSuggest,

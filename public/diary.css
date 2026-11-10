@@ -566,23 +566,32 @@ code{font-family:var(--font-mono);font-size:.92em;background:var(--bg3);padding:
   box-shadow:var(--shadow2);cursor:crosshair;}
 
 /* 어느 여드름을 찍은 건지 가리키는 화살표. 사진에 그려 넣지 않고 얹기만 한다 */
-.shot-mark{position:absolute;width:64px;height:64px;pointer-events:none;
+/* 크기는 사진 너비의 %다 — 어느 화면에서 보든 가리키는 범위가 같게 */
+.shot-mark{position:absolute;width:26%;aspect-ratio:1;pointer-events:none;
   transform:translate(-50%,-50%) rotate(var(--rot,0deg));transform-origin:50% 50%;}
 .shot-mark svg{width:100%;height:100%;overflow:visible;}
-.shot-mark .ar-l{fill:none;stroke:#fff;stroke-width:4;stroke-linecap:round;
+/* 선은 같이 굵어지지 않게 둔다. 크게 두르면 테가 띠처럼 뭉개져서 */
+.shot-mark path,.shot-mark circle{vector-effect:non-scaling-stroke;}
+.shot-mark .ar-l{fill:none;stroke:#fff;stroke-width:3.5;stroke-linecap:round;
   filter:drop-shadow(0 0 2px rgba(2,6,23,.85));}
 .shot-mark .ar-h{fill:#fff;filter:drop-shadow(0 0 2px rgba(2,6,23,.85));}
-.shot-mark .ar-r{fill:none;stroke:#fff;stroke-width:3;
+.shot-mark .ar-r{fill:none;stroke:#fff;stroke-width:2.5;
   filter:drop-shadow(0 0 2px rgba(2,6,23,.85));}
 .shot-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;cursor:default;}
 .shot-tip{font-size:11.5px;color:rgba(255,255,255,.72);}
+.shot-size{display:flex;align-items:center;gap:7px;font-size:11.5px;color:rgba(255,255,255,.72);}
+.shot-size[hidden]{display:none;}
+.shot-size input{width:104px;height:20px;accent-color:#fff;cursor:pointer;margin:0;}
 .shot-btn{padding:6px 14px;font-size:12px;font-weight:600;border-radius:100px;cursor:pointer;
   border:1px solid rgba(255,255,255,.3);background:rgba(255,255,255,.1);color:#fff;}
 .shot-btn:hover{background:rgba(255,255,255,.22);}
 .shot-btn[hidden]{display:none;}
 
 /* 작은 사진에서는 고리만 — 화살표까지 그리면 정작 사진이 안 보인다 */
-.ac-shot-m{position:absolute;width:15px;height:15px;margin:-7.5px 0 0 -7.5px;border-radius:50%;
+/* 작은 사진에서는 비율대로 줄이면 안 보인다 — 크기는 따라가되 바닥을 둔다 */
+.ac-shot-m{position:absolute;width:clamp(7px,calc(var(--s,26) * 0.54px),70%);
+  aspect-ratio:1;border-radius:50%;
+  transform:translate(-50%,-50%);
   border:2px solid #fff;box-shadow:0 0 0 1px rgba(2,6,23,.6),0 0 3px rgba(2,6,23,.8);
   pointer-events:none;}
 .shot-x{position:absolute;top:16px;right:16px;width:36px;height:36px;border:none;border-radius:50%;

@@ -271,7 +271,12 @@ async function acSetMark(photoId, m){
     const shot = (d.shot || []).map(x => {
       if(!x.photos || !x.photos.includes(photoId)) return x;
       const marks = { ...(x.marks || {}) };
-      if(m) marks[photoId] = { x: m.x, y: m.y }; else delete marks[photoId];
+      // 자리와 크기만 적는다. 크기는 기본값일 때는 적지 않는다 —
+      // 예전에 찍어 둔 표시와 똑같은 모양으로 남게.
+      if(m){
+        marks[photoId] = { x: m.x, y: m.y };
+        if(m.s && m.s !== DiaryTracks.MARK_S.def) marks[photoId].s = m.s;
+      }else delete marks[photoId];
       const out = { ...x, marks };
       if(!Object.keys(marks).length) delete out.marks;
       return out;
@@ -478,7 +483,8 @@ function acShotsHtml(s, ds){
     return `<div class="tf-shot ac-shot" data-id="${escapeHtml(pid)}">` +
       `<img alt="" loading="lazy">` +
       // 작은 사진에서는 고리만. 화살표까지 그리면 사진이 안 보인다.
-      (m ? `<span class="ac-shot-m" style="left:${m.x * 100}%;top:${m.y * 100}%"></span>` : '') +
+      (m ? `<span class="ac-shot-m" style="left:${m.x * 100}%;top:${m.y * 100}%;` +
+             `--s:${DiaryTracks.markS(m)}"></span>` : '') +
       `<button type="button" class="tf-shot-x" title="사진 빼기" aria-label="사진 빼기">✕</button>` +
       `<span class="ac-shot-d">${acDays(g.ds, s)}일째</span>` +
     `</div>`;
